@@ -1,0 +1,5 @@
+
+input[type=checkbox]{-webkit-appearance:none;appearance:none;width:18px!important;height:18px;padding:0;background:#fff!important;border:2px solid #8b8b8b;border-radius:4px;cursor:pointer;vertical-align:middle;display:inline-block;box-shadow:none!important}
+input[type=checkbox]:checked{background:#fff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3 8.5l3.2 3L13 4.5' fill='none' stroke='%231d1d20' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center/14px no-repeat!important}
+.ck{display:inline-block;width:18px;height:18px;background:#fff;border:2px solid #8b8b8b;border-radius:3px;margin-right:10px;cursor:pointer;vertical-align:middle}
+.mcal .dy.sel{outline:2px solid var(--red);background:rgba(255,255,255,.95)}

@@ -1,0 +1,1 @@
+setTimeout(function(){var b=document.getElementById('boot');if(b)b.remove()},4000)

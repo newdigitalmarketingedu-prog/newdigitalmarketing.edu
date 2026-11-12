@@ -1,0 +1,8 @@
+
+button[title="Editar"],button[title="Eliminar"],button[title="Guardar"],button[title="Eliminar usuario"]{background:none!important;border:0!important;box-shadow:none!important;border-radius:0!important;padding:2px 5px!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important;font-size:16px;cursor:pointer}
+button[title="Editar"]:hover,button[title="Eliminar"]:hover,button[title="Guardar"]:hover,button[title="Eliminar usuario"]:hover{background:none!important;transform:scale(1.2)}
+.rsec .grid.k2{grid-template-columns:repeat(2,minmax(0,1fr))}
+.rsec .chb{height:240px;display:flex;flex-direction:column;min-width:0}
+.rsec .cv{flex:1;min-height:0;display:flex;align-items:center;justify-content:center}
+.rsec .cv>svg{width:100%;height:100%}
+@media(max-width:700px){.rsec .grid.k2{grid-template-columns:1fr}}

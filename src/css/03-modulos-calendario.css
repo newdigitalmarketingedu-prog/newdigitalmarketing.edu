@@ -1,0 +1,13 @@
+
+#ndmlink{opacity:.1!important}
+.mcal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.mcal .wd{text-align:center;font-size:12px;font-weight:700;color:var(--mu);padding:4px 0}
+.mcal .dy{min-height:92px;background:rgba(255,255,255,.6);border:1px solid rgba(255,255,255,.85);border-radius:10px;padding:6px;display:flex;flex-direction:column;gap:3px;min-width:0}
+.mcal .dy.em{background:transparent;border:0}
+.mcal .dy.today{outline:2px solid var(--red)}
+.mcal .dn{font-size:12px;font-weight:700}
+.mcal .pc{border:0;border-radius:6px;padding:2px 5px;color:#fff;font-size:10.5px;text-align:left;cursor:pointer;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:100%}
+.lgd{display:inline-block;width:10px;height:10px;border-radius:3px;margin:0 4px 0 10px;vertical-align:middle}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1d1d20;color:#fff;padding:10px 16px;border-radius:10px;z-index:99;font-size:13px}
+@media(max-width:700px){.mcal .dy{min-height:56px;padding:3px}.mcal .pc{font-size:0;height:8px;padding:0}}
+@media print{@page{size:A4;margin:12mm}aside,#menu,.top .note,.noprint,body::after{display:none!important}main{margin:0!important;max-width:none!important;padding:0!important}body{background:#fff!important}*{-webkit-print-color-adjust:exact;print-color-adjust:exact}.card,.lbox{backdrop-filter:none!important;-webkit-backdrop-filter:none!important;background:#fff!important;box-shadow:none!important;border:1px solid #ddd!important;break-inside:avoid}}

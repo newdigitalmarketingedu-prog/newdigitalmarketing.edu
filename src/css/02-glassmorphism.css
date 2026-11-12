@@ -1,0 +1,33 @@
+
+/* ===== Glassmorphism ===== */
+body{background-color:#eceff7;background-image:radial-gradient(circle at 10% 15%,color-mix(in srgb,var(--red) 42%,transparent) 0,transparent 36%),radial-gradient(circle at 90% 10%,color-mix(in srgb,var(--red) 20%,#7b93ff) 0,transparent 34%),radial-gradient(circle at 80% 90%,color-mix(in srgb,var(--red) 32%,#ffd0a6) 0,transparent 40%),radial-gradient(circle at 15% 92%,rgba(110,170,255,.38) 0,transparent 34%);background-attachment:fixed}
+.card,.lbox,.fam,.col,.mood div,.tabs button,.cal div,.kpi{background:rgba(255,255,255,.42);border:1px solid rgba(255,255,255,.65);-webkit-backdrop-filter:blur(16px) saturate(160%);backdrop-filter:blur(16px) saturate(160%)}
+.card,.lbox{box-shadow:0 8px 32px rgba(31,38,80,.12),inset 0 1px 0 rgba(255,255,255,.7);border-radius:18px}
+.col{background:rgba(255,255,255,.3)}
+.fam,.cal div,.mood div{background:rgba(255,255,255,.55);box-shadow:0 2px 10px rgba(31,38,80,.06)}
+.card .card{background:rgba(255,255,255,.4);box-shadow:0 2px 12px rgba(31,38,80,.06)}
+.tabs button{background:rgba(255,255,255,.5)}.tabs button.on{background:var(--red);border-color:transparent;box-shadow:0 4px 14px color-mix(in srgb,var(--red) 40%,transparent)}
+input,select,textarea{background:rgba(255,255,255,.55);border:1px solid rgba(255,255,255,.8);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);box-shadow:inset 0 1px 3px rgba(31,38,80,.08)}
+input:focus,select:focus,textarea:focus{outline:0;border-color:var(--red);box-shadow:0 0 0 3px color-mix(in srgb,var(--red) 22%,transparent)}
+.btn{box-shadow:0 4px 14px color-mix(in srgb,var(--red) 35%,transparent),inset 0 1px 0 rgba(255,255,255,.35)}
+.btn.g{background:rgba(255,255,255,.5);border:1px solid rgba(255,255,255,.8);box-shadow:0 2px 8px rgba(31,38,80,.08)}
+.btn.g:hover{background:rgba(255,255,255,.8)}
+aside{background-image:none!important;background-color:rgba(255,255,255,.45)!important;-webkit-backdrop-filter:blur(22px) saturate(170%);backdrop-filter:blur(22px) saturate(170%);border-right:1px solid rgba(255,255,255,.7);box-shadow:4px 0 30px rgba(31,38,80,.08)}
+nav button{border-radius:12px}nav button.on{box-shadow:0 4px 14px color-mix(in srgb,var(--red) 40%,transparent)}
+th,td{border-bottom-color:rgba(255,255,255,.7)}
+.bar{background:rgba(255,255,255,.55)}
+.tag{-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
+body[data-th="ndm"]{background-color:#e9e9ec}
+body[data-th="ndm"] aside{background-color:rgba(0,0,0,.6)!important;border-right-color:rgba(255,255,255,.12)}
+body[data-th="ndm"] #login{background:radial-gradient(circle at 20% 20%,#3a3a3a,transparent 45%),radial-gradient(circle at 85% 80%,#555,transparent 45%),#000}
+body[data-th="ndm"] #login .lbox{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.2)}
+body[data-th="ndm"] #login input,body[data-th="ndm"] #login select{background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.2)}
+body[data-th="mda"]{background-color:#e6f5e9}
+body[data-th="mda"] aside{background-color:rgba(34,166,56,.62)!important;border-right-color:rgba(255,255,255,.4)}
+body[data-th="mda"] #login{background:radial-gradient(circle at 15% 15%,#7ee08f,transparent 45%),radial-gradient(circle at 85% 85%,#0f7a24,transparent 50%),#22a638}
+body[data-th="mda"] #login .lbox{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.5)}
+body[data-th="mda"] #login input,body[data-th="mda"] #login select{background:rgba(255,255,255,.85)}
+body[data-th="cat"] #login{background:linear-gradient(135deg,#fff1c7,#d9e6ff 55%,#c9f0f3)}
+body[data-th="cat"] #login .lbox{background:rgba(255,255,255,.5)}
+body[data-th="cat"] aside{background-color:rgba(255,255,255,.5)!important}
+@supports not (backdrop-filter:blur(1px)){.card,.lbox,aside{background:rgba(255,255,255,.88)!important}}

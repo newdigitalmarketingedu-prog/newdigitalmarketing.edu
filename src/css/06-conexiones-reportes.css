@@ -1,0 +1,12 @@
+
+.cncard .btn{width:150px!important;display:block!important;padding:6px 10px!important;margin-bottom:8px!important;text-align:center;font-size:13px}
+.rps{margin-top:12px}.rps .rg{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px;margin-top:6px}
+.rps .chb p{margin:0 0 6px;font-size:13px}
+.rb{display:grid;grid-template-columns:minmax(90px,40%) 1fr auto;gap:8px;align-items:center;margin:7px 0;font-size:12px}
+.rb .l{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rb .t{height:10px;background:rgba(0,0,0,.08);border-radius:6px;overflow:hidden}.rb .t i{display:block;height:100%;border-radius:6px}
+.vc{display:flex;align-items:flex-end;gap:4px;height:150px}
+.vc>div{flex:1;min-width:0;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:stretch;text-align:center;font-size:10px}
+.vc i{display:block;background:var(--red);border-radius:4px 4px 0 0;min-height:2px;margin:2px 0}
+.vc em{font-style:normal;color:var(--mu)}
+@media print{.rgrp{display:block!important}.rtabs{display:none!important}}
