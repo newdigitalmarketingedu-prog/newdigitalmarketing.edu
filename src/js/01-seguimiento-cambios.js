@@ -1,0 +1,1 @@
+var DIRTY=0;['click','input','change','keyup','drop'].forEach(function(e){addEventListener(e,function(){DIRTY=Date.now()+8000},true)});setTimeout(function(){var b=document.getElementById('boot');if(b)b.remove()},4000)
