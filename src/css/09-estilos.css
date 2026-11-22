@@ -1,8 +1,0 @@
-
-input[type=number]{-moz-appearance:textfield;appearance:textfield}
-input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;display:none}
-.nw{position:relative;max-width:100%;vertical-align:middle}
-.nw>input{width:100%!important;padding-right:24px}
-.nb{position:absolute;right:1px;top:1px;bottom:1px;width:19px;display:flex;flex-direction:column;background:#fff;border-left:1px solid #ddd;border-radius:0 7px 7px 0;overflow:hidden}
-.nb i{flex:1;display:flex;align-items:center;justify-content:center;font-style:normal;font-size:7px;color:#444;cursor:pointer;user-select:none;background:#fff}
-.nb i:hover{background:#eee}
