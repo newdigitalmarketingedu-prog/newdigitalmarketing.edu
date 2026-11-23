@@ -28,7 +28,7 @@ Con esto, todo lo que se haga en la plataforma (módulos, usuarios, permisos, in
 3. **Commit changes**. En 1–2 minutos GitHub Pages publica el cambio.
 
 ## 6. Comprobar
-- Abre la plataforma: abajo a la derecha debe decir **☁ Sincronizado**.
+- Abre la plataforma: al ingresar, junto a «Autoguardado» debe decir **☁ Sincronizado**.
 - Entra como Admin en una computadora, crea un usuario o cambia algo; ábrela en otra computadora: el cambio aparece solo.
 - Si dice **⚠ Sin permiso para guardar en la nube**: revisa los pasos 2.4 (reglas) y 3 (Anónimo).
 - Si dice **⚠ Solo este equipo**: `firebase-config.js` está vacío o mal escrito.

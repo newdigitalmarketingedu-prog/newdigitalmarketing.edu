@@ -280,16 +280,17 @@ window.ndmDB=function(){if(P)return P;window.__dbWait=1;P=(async()=>{let db=null
  if(!db){const c=cfg();if(c){try{db=await fire(c);mode='firebase'}catch(e){console.warn('NDM: no se pudo conectar con Firebase:',e&&e.message);db=null;window.__dbFail=(e&&e.message)||'error'}}}
  window.__dbOn=mode;window.__dbWait=0;return db?wrap(db):null})();return P};
 window.ndmDB();
-/* ---- indicador de estado (abajo a la derecha, sobre la versión) ---- */
+/* ---- indicador de estado (en la línea de «Autoguardado») ---- */
 function st(){const m=window.__dbOn,err=window.__dbErr&&(!window.__dbOk||window.__dbErr>window.__dbOk);
  if(window.__dbWait)return['☁ Conectando…','#556','Conectando con la nube…'];
  if(!m)return['⚠ Solo este equipo','#b45309','Los cambios se guardan solo en este navegador y NO se ven en otras computadoras. Configura la conexión en ⚙ Configuración → Conexión entre computadoras (inicio de sesión de New Digital Marketing.edu).'];
  if(err)return['⚠ Sin permiso para guardar en la nube','#b91c1c',m==='claude'?'Tu acceso a esta página es de solo lectura: el dueño debe compartirla contigo con permiso de Colaborador o Editor.':'Firebase rechazó el guardado: revisa las reglas de Firestore y que el acceso Anónimo esté activado.'];
  return['☁ Sincronizado','#15803d','Módulos, cuentas y configuraciones compartidos entre usuarios y computadoras ('+(m==='claude'?'claude.ai':'Firebase')+').']}
 window.ndmSyncState=st;
-function chip(){if(!document.body)return;let e=document.getElementById('ndmsync');
- if(!e){e=document.createElement('div');e.id='ndmsync';e.style.cssText='position:fixed;right:14px;bottom:44px;z-index:9990;font:600 11px/1.2 system-ui,-apple-system,Segoe UI,sans-serif;padding:5px 10px;border-radius:999px;background:rgba(255,255,255,.94);box-shadow:0 2px 10px rgba(0,0,0,.15);cursor:help;pointer-events:auto';document.body.appendChild(e);const s=document.createElement('style');s.textContent='@media print{#ndmsync{display:none}}';document.head.appendChild(s)}
- const cv=document.getElementById('cfver'),vr=cv&&cv.getBoundingClientRect(),hasV=!!(vr&&vr.height&&getComputedStyle(cv).display!=='none'&&getComputedStyle(cv).visibility!=='hidden');e.style.bottom=hasV?'44px':'12px';const [t,c,tip]=st();if(e.textContent!==t)e.textContent=t;e.style.color=c;e.title=tip}
+function chip(){const sv=document.getElementById('sv');let e=document.getElementById('ndmsync');
+ if(!sv){if(e)e.remove();return}
+ if(!e||e.previousSibling!==sv){if(e)e.remove();e=document.createElement('span');e.id='ndmsync';e.style.cssText='font-weight:600;cursor:help;white-space:nowrap';sv.insertAdjacentElement('afterend',e)}
+ const [t,c,tip]=st(),txt=' · '+t;if(e.textContent!==txt)e.textContent=txt;e.style.color=c;e.title=tip}
 /* ---- sección del panel Configuración ---- */
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function parseCfg(t){t=String(t||'');const a=t.indexOf('{'),b=t.lastIndexOf('}');if(a<0||b<a)return null;let s=t.slice(a,b+1);
