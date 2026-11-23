@@ -9,7 +9,7 @@
    La seguridad la dan las reglas de firestore.rules.
    ===================================================================== */
 window.NDM_FIREBASE = {
-  apiKey: "",   /* <-- PEGA AQUÍ la apiKey (Firebase → ⚙ Configuración del proyecto → Tus apps → Configuración del SDK) */
+  apiKey: "AIzaSyD1EVKDXvWOaM1i0mIGKPqDhYZKVs1LpAs",   /* <-- PEGA AQUÍ la apiKey (Firebase → ⚙ Configuración del proyecto → Tus apps → Configuración del SDK) */
   authDomain: "ndm-marketing-edu.firebaseapp.com",
   projectId: "ndm-marketing-edu",
   storageBucket: "ndm-marketing-edu.firebasestorage.app",
