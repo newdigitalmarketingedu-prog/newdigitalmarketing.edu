@@ -9,11 +9,11 @@
    La seguridad la dan las reglas de firestore.rules.
    ===================================================================== */
 window.NDM_FIREBASE = {
-  apiKey: "",
-  authDomain: "",
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: ""
+  apiKey: "",   /* <-- PEGA AQUÍ la apiKey (Firebase → ⚙ Configuración del proyecto → Tus apps → Configuración del SDK) */
+  authDomain: "ndm-marketing-edu.firebaseapp.com",
+  projectId: "ndm-marketing-edu",
+  storageBucket: "ndm-marketing-edu.firebasestorage.app",
+  messagingSenderId: "611929648586",
+  appId: "1:611929648586:web:c2de026bb83f770748b333"
 };
 if (!window.NDM_FIREBASE.apiKey || !window.NDM_FIREBASE.projectId) window.NDM_FIREBASE = null;
