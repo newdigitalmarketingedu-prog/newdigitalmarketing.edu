@@ -227,6 +227,103 @@ aside{transition:transform .2s}
 
 </style>
 <style id="boot">html{visibility:hidden}</style>
+<script src="firebase-config.js"></script>
+<script>
+/* ===== Conexión en la nube: todos los módulos, cuentas y configuraciones se comparten entre usuarios y computadoras =====
+   1) Abierta desde claude.ai: usa la base de datos del artefacto.
+   2) Abierta desde GitHub Pages u otro hosting: usa Firebase (Firestore) si está configurado.
+   Sin ninguna de las dos, los datos quedan solo en este navegador. */
+window.NDM_FIREBASE=window.NDM_FIREBASE||null;/*NDM_FB*/
+(function(){
+const LIM=80000,SEP='~',sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const inClaude=()=>!!window.claude||/claudeusercontent|claude\.(ai|site)/i.test(location.hostname);
+function cfg(){let c=window.NDM_FIREBASE;if(!c){try{c=JSON.parse(localStorage.getItem('ndm:fb')||'null')}catch(e){c=null}}return c&&c.apiKey&&c.projectId?c:null}
+window.ndmFbCfg=cfg;
+function load(src){return new Promise((ok,ko)=>{const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=()=>ko(new Error('No se pudo cargar '+src));document.head.appendChild(s)})}
+async function fire(c){const B='https://www.gstatic.com/firebasejs/10.12.5/';
+ if(!window.firebase)await load(B+'firebase-app-compat.js');
+ await Promise.all([window.firebase.firestore?0:load(B+'firebase-firestore-compat.js'),window.firebase.auth?0:load(B+'firebase-auth-compat.js').catch(()=>{})]);
+ const app=firebase.apps.find(a=>a.name==='ndm')||firebase.initializeApp(c,'ndm');
+ try{if(app.auth){const au=app.auth();if(!au.currentUser)await Promise.race([au.signInAnonymously(),sleep(7000)])}}catch(e){console.warn('NDM: acceso anónimo de Firebase no activado:',e&&e.message)}
+ return app.firestore()}
+/* ---- documentos grandes (logos, imágenes, chats): se guardan en partes ---- */
+const isBig=d=>!!(d&&d.__big&&d.__big.n>0);
+const okw=r=>{window.__dbOk=Date.now();return r},kow=e=>{window.__dbErr=Date.now();throw e};
+function fake(src,data){return{id:src.id,exists:true,data:()=>data,metadata:src.metadata||{fromCache:false,hasPendingWrites:false},ref:src.ref}}
+function join(main,part){const d=main.data(),b=d.__big;let s='';for(let i=0;i<b.n;i++){const p=part(i);if(!p||p.v!==b.v||typeof p.p!=='string')return null;s+=p.p}const o=Object.assign({},d);delete o.__big;o.s=s;return fake(main,o)}
+function wDoc(raw,col){const id=raw.id,part=i=>col.doc(id+SEP+i);
+ async function asm(sn){if(!sn.exists||!isBig(sn.data()))return sn;const n=sn.data().__big.n;
+  for(let t=0;t<4;t++){const ps=await Promise.all([...Array(n)].map((_,i)=>part(i).get().then(x=>x.exists?x.data():null).catch(()=>null)));const r=join(sn,i=>ps[i]);if(r)return r;await sleep(1500)}return null}
+ return{id,path:raw.path,
+  async set(data){try{const s=data&&data.s;if(typeof s==='string'&&s.length>LIM){const v=Date.now().toString(36)+Math.random().toString(36).slice(2,7),n=Math.ceil(s.length/LIM);
+    for(let i=0;i<n;i++)await part(i).set({v,p:s.slice(i*LIM,(i+1)*LIM)});return okw(await raw.set(Object.assign({},data,{s:'',__big:{v,n}})))}
+   return okw(await raw.set(data))}catch(e){kow(e)}},
+  update:d=>raw.update(d).then(okw,kow),delete:()=>raw.delete(),
+  async get(){const sn=await raw.get();return sn.exists?((await asm(sn))||sn):sn},
+  onSnapshot(next,err){let q=0;return raw.onSnapshot(sn=>{const my=++q;if(!sn.exists||!isBig(sn.data())){next(sn);return}asm(sn).then(r=>{if(r&&my===q)next(r)})},err)}}}
+function asmAll(docs){const by={};docs.forEach(d=>{by[d.id]=d});const out=[];
+ docs.forEach(d=>{if(d.id.indexOf(SEP)>-1)return;const dt=d.data();if(isBig(dt)){const r=join(d,i=>{const p=by[d.id+SEP+i];return p&&p.data()});if(r)out.push(r)}else out.push(d)});return out}
+const keyOf=d=>{const o=Object.assign({},d.data()),s=o.s;delete o.s;return (d.metadata&&d.metadata.hasPendingWrites?'P':'C')+JSON.stringify(o)+'\u0000'+(typeof s==='string'?s:JSON.stringify(s))};
+function qsnap(docs,meta,changes){return{docs,size:docs.length,empty:!docs.length,metadata:meta||{fromCache:false,hasPendingWrites:false},docChanges:()=>changes}}
+function wCol(raw){return{path:raw.path,id:raw.id,doc:id=>wDoc(raw.doc(id),raw),add:d=>raw.add(d),
+  where:(...a)=>raw.where(...a),orderBy:(...a)=>raw.orderBy(...a),limit:n=>raw.limit(n),
+  async get(){const qs=await raw.get(),docs=asmAll(qs.docs);return qsnap(docs,qs.metadata,docs.map((doc,i)=>({type:'added',doc,oldIndex:-1,newIndex:i})))},
+  onSnapshot(next,err){let prev=new Map();return raw.onSnapshot(qs=>{const docs=asmAll(qs.docs),cur=new Map(),ch=[];
+   docs.forEach((d,i)=>{const k=keyOf(d);cur.set(d.id,{k,d});const p=prev.get(d.id);if(!p)ch.push({type:'added',doc:d,oldIndex:-1,newIndex:i});else if(p.k!==k)ch.push({type:'modified',doc:d,oldIndex:i,newIndex:i})});
+   prev.forEach((p,id)=>{if(!cur.has(id))ch.push({type:'removed',doc:p.d,oldIndex:0,newIndex:-1})});prev=cur;next(qsnap(docs,qs.metadata,ch))},err)}}}
+function wrap(db){return{doc(p){const a=p.split('/');a.pop();return wDoc(db.doc(p),db.collection(a.join('/')))},collection:p=>wCol(db.collection(p))}}
+/* ---- punto de acceso único ---- */
+let P=null;
+window.ndmDB=function(){if(P)return P;window.__dbWait=1;P=(async()=>{let db=null,mode='';
+ try{if(inClaude()){for(let i=0;i<50&&!window.claude;i++)await sleep(100)}
+  if(window.claude&&claude.use){db=await Promise.race([claude.use('db'),sleep(10000).then(()=>null)]).catch(()=>null);if(db)mode='claude'}}catch(e){db=null}
+ if(!db){const c=cfg();if(c){try{db=await fire(c);mode='firebase'}catch(e){console.warn('NDM: no se pudo conectar con Firebase:',e&&e.message);db=null;window.__dbFail=(e&&e.message)||'error'}}}
+ window.__dbOn=mode;window.__dbWait=0;return db?wrap(db):null})();return P};
+window.ndmDB();
+/* ---- indicador de estado (abajo a la izquierda) ---- */
+function st(){const m=window.__dbOn,err=window.__dbErr&&(!window.__dbOk||window.__dbErr>window.__dbOk);
+ if(window.__dbWait)return['☁ Conectando…','#556','Conectando con la nube…'];
+ if(!m)return['⚠ Solo este equipo','#b45309','Los cambios se guardan solo en este navegador y NO se ven en otras computadoras. Configura la conexión en ⚙ Configuración → Conexión entre computadoras (inicio de sesión de New Digital Marketing.edu).'];
+ if(err)return['⚠ Sin permiso para guardar en la nube','#b91c1c',m==='claude'?'Tu acceso a esta página es de solo lectura: el dueño debe compartirla contigo con permiso de Colaborador o Editor.':'Firebase rechazó el guardado: revisa las reglas de Firestore y que el acceso Anónimo esté activado.'];
+ return['☁ Sincronizado','#15803d','Módulos, cuentas y configuraciones compartidos entre usuarios y computadoras ('+(m==='claude'?'claude.ai':'Firebase')+').']}
+window.ndmSyncState=st;
+function chip(){if(!document.body)return;let e=document.getElementById('ndmsync');
+ if(!e){e=document.createElement('div');e.id='ndmsync';e.style.cssText='position:fixed;left:10px;bottom:10px;z-index:9990;font:600 11px/1.2 system-ui,-apple-system,Segoe UI,sans-serif;padding:5px 10px;border-radius:999px;background:rgba(255,255,255,.94);box-shadow:0 2px 10px rgba(0,0,0,.15);cursor:help;pointer-events:auto';document.body.appendChild(e);const s=document.createElement('style');s.textContent='@media print{#ndmsync{display:none}}';document.head.appendChild(s)}
+ const [t,c,tip]=st();if(e.textContent!==t)e.textContent=t;e.style.color=c;e.title=tip}
+/* ---- sección del panel Configuración ---- */
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function parseCfg(t){t=String(t||'');const a=t.indexOf('{'),b=t.lastIndexOf('}');if(a<0||b<a)return null;let s=t.slice(a,b+1);
+ try{return JSON.parse(s)}catch(e){}
+ s=s.replace(/\/\/[^\n]*/g,'').replace(/([{,]\s*)([A-Za-z_]\w*)\s*:/g,'$1"$2":').replace(/'([^']*)'/g,'"$1"').replace(/,\s*}/g,'}');try{return JSON.parse(s)}catch(e){return null}}
+function msg(t,bad){const e=document.getElementById('ndmfbm');if(e){e.textContent=t;e.style.color=bad?'#b91c1c':'#15803d'}}
+async function download(c){let src='';try{const r=await fetch(location.href.split('#')[0],{cache:'no-store'});if(r.ok)src=await r.text()}catch(e){}
+ if(src.indexOf('/*NDM_FB*/')<0){msg('No pude leer el archivo de la página desde aquí. Abre la plataforma desde GitHub Pages (o tu hosting) y vuelve a intentarlo.',1);return}
+ const js='window.NDM_FIREBASE='+(c?JSON.stringify(c).replace(/</g,'\\u003c'):'null')+';/*NDM_FB*/';
+ src=src.replace(/window\.NDM_FIREBASE=.*?;\/\*NDM_FB\*\//,()=>js);
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([src],{type:'text/html'}));a.download='index.html';document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},2000);
+ msg('Descargado. Sube este index.html a tu repositorio (reemplaza el anterior): todas las computadoras quedarán conectadas sin configurar nada.')}
+function block(){const p=document.getElementById('cfgp');if(!p||!p.children.length)return;const host=p.querySelector('.cf-b')||p;const ex=host.querySelector('#ndmfb');if(ex){if(ex.dataset.t===st()[0]||ex.contains(document.activeElement))return;ex.remove()}
+ const m=window.__dbOn,c=cfg(),inSrc=!!window.NDM_FIREBASE,[t,col]=st(),d=document.createElement('div');d.id='ndmfb';d.dataset.t=t;d.style.cssText='margin-top:14px';
+ let h='<h4>Conexión entre computadoras</h4><div style="font-weight:700;color:'+col+';margin:4px 0 6px">'+esc(t)+'</div>';
+ if(m==='claude')h+='<p class="fl" style="font-size:12px;line-height:1.45">Abierta desde claude.ai: todos los módulos, cuentas y configuraciones ya se comparten entre usuarios y computadoras. Para que otra persona pueda guardar cambios, compártele la página con permiso de <b>Colaborador</b> o <b>Editor</b> (con «Ver» solo puede mirar).</p>';
+ else{h+='<p class="fl" style="font-size:12px;line-height:1.45">Fuera de claude.ai la plataforma necesita una base de datos en la nube para compartir todo entre computadoras. Usa Firebase (gratis): pega aquí la configuración de tu app web.</p>'
+  +'<textarea id="ndmfbt" rows="6" style="width:100%;box-sizing:border-box;font:11px/1.35 ui-monospace,Consolas,monospace" placeholder="const firebaseConfig = { apiKey: &quot;…&quot;, authDomain: &quot;…&quot;, projectId: &quot;…&quot;, appId: &quot;…&quot; };">'+(c?esc(JSON.stringify(c,null,1)):'')+'</textarea>'
+  +'<div class="cf-row" style="flex-wrap:wrap;gap:6px;margin-top:6px"><button class="cf-btn p" type="button" data-nd="on">Conectar</button>'+(c?'<button class="cf-btn" type="button" data-nd="dl">⬇ Descargar index.html conectado</button>':'')+(c&&!inSrc?'<button class="cf-btn" type="button" data-nd="off">Desconectar</button>':'')+'</div>'
+  +(inSrc?'<p class="fl" style="font-size:11px">Esta copia ya trae la conexión incluida en el archivo.</p>':'')
+  +'<details style="margin-top:6px;font-size:11.5px;line-height:1.45"><summary style="cursor:pointer;font-weight:600">Cómo crear la conexión (una sola vez)</summary><ol style="padding-left:18px;margin:6px 0">'
+  +'<li>Entra a console.firebase.google.com y crea un proyecto.</li><li>Compilación → <b>Firestore Database</b> → Crear base de datos.</li><li>Compilación → <b>Authentication</b> → Método de acceso → activa <b>Anónimo</b>.</li>'
+  +'<li>Firestore → Reglas → pega:<br><code style="font-size:10.5px">allow read, write: if request.auth != null;</code> dentro de <code style="font-size:10.5px">match /{document=**}</code> y publica.</li>'
+  +'<li>Configuración del proyecto → Tus apps → Web (&lt;/&gt;) → copia <b>firebaseConfig</b> y pégalo arriba → Conectar.</li><li>Pulsa <b>Descargar index.html conectado</b> y súbelo a GitHub: desde ese momento todas las computadoras y usuarios comparten todo.</li></ol></details>';
+  if(window.__dbFail)h+='<p style="color:#b91c1c;font-size:11.5px">No se pudo conectar: '+esc(window.__dbFail)+'</p>'}
+ h+='<p id="ndmfbm" style="font-size:11.5px;margin:6px 0 0"></p>';d.innerHTML=h;host.appendChild(d);
+ d.addEventListener('click',e=>{const b=e.target.closest('[data-nd]');if(!b)return;const a=b.dataset.nd;
+  if(a==='on'){const o=parseCfg(document.getElementById('ndmfbt').value);if(!o||!o.apiKey||!o.projectId){msg('No reconozco la configuración: debe incluir apiKey y projectId.',1);return}
+   try{localStorage.setItem('ndm:fb',JSON.stringify(o))}catch(x){}msg('Conectando…');setTimeout(()=>location.reload(),500)}
+  else if(a==='off'){try{localStorage.removeItem('ndm:fb')}catch(x){}location.reload()}
+  else if(a==='dl')download(cfg())})}
+setInterval(()=>{try{chip();block()}catch(e){}},1000);
+})();
+</script>
 <script>window.__B={h:location.hash.slice(1),sp:0};try{var _q=location.hash+location.search;if(/(access_token=|error_reason=)/.test(_q)&&/ndm_/.test(_q)){localStorage.setItem('ndm:oauth',JSON.stringify({h:_q,t:Date.now()}));window.__B.h='';document.documentElement.style.display='none';window.close()}}catch(e){}try{if(sessionStorage.getItem('ndm:splash')||localStorage.getItem('ndm:splash')){window.__B.sp=1;var _c=localStorage.getItem('ndm:spbg')||'#d92020',_st=document.createElement('style');_st.id='spboot';_st.textContent='html{background:'+_c+'!important}body>*{visibility:hidden!important}body>#splash{visibility:visible!important}';document.head.appendChild(_st);setTimeout(function(){var x=document.getElementById('spboot');if(x)x.remove()},4000)}sessionStorage.removeItem('ndm:splash');localStorage.removeItem('ndm:splash')}catch(e){}</script>
 <script>var DIRTY=0;['click','input','change','keyup','drop'].forEach(function(e){addEventListener(e,function(){DIRTY=Date.now()+8000},true)});setTimeout(function(){var b=document.getElementById('boot');if(b)b.remove()},4000)</script>
 </head>
@@ -1248,15 +1345,15 @@ function pack(k){const v=k==='atlOwn'?S.atl.filter(p=>p.i===S.inst):S[k];if(v===
 const busy=()=>{const a=document.activeElement,v=$('view');if(S.ed||S.pe!=null||S.oed)return true;if(a&&/^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)&&a.type!=='checkbox'&&v.contains(a))return true;return [...v.querySelectorAll('input,textarea')].some(e=>e.type==='file'?e.files.length:(e.type!=='checkbox'&&e.value!==e.defaultValue))};
 function render(){if(!S.user||!V[S.v])return;const y=scrollY;try{V[S.v]()}catch(e){}scrollTo(0,y)}
 function flush(){if(!Object.keys(pend).length||busy())return;let ch=0;for(const k in pend){const s=pend[k];delete pend[k];last[k]=s;try{const v=JSON.parse(s);if(k==='atlOwn')S.atl=S.atl.filter(p=>p.i!==S.inst).concat(v);else S[k]=v;ch=1}catch(e){}}if(ch)render()}
-async function start(){if(started||!S.user)return;const db=await claude.use('db');if(!db)return;started=true;col=db.collection('i_'+SL[S.inst||0]);
+async function start(){if(started||!S.user)return;const db=await ndmDB();if(!db)return;started=true;col=db.collection('i_'+SL[S.inst||0]);
  col.onSnapshot(sn=>{sn.docChanges().forEach(c=>{if(c.type==='removed')return;const d=c.doc;if(d.metadata&&d.metadata.hasPendingWrites)return;const dt=d.data(),s=dt&&dt.s;if(typeof s!=='string'||!KEYS.includes(d.id))return;if(s!==last[d.id])pend[d.id]=s;else delete pend[d.id]});if(!(sn.metadata&&sn.metadata.fromCache))ready=true;flush()},()=>toast('No se pudo sincronizar los datos compartidos.'))}
 setInterval(()=>{if(!ready||!col||Date.now()>DIRTY)return;KEYS.forEach(k=>{if(pend[k]||fly[k])return;const s=pack(k);if(s===null||s===last[k])return;fly[k]=1;last[k]=s;col.doc(k).set({s}).catch(()=>{last[k]=undefined;if(!warned){warned=1;toast('No tienes permiso para guardar cambios compartidos.')}}).finally(()=>{fly[k]=0})})},2500);
 setInterval(flush,700);
 const oen=enter;enter=function(){oen();if($('app').style.display==='block')start()};
 /* cuentas y permisos compartidos */
 let lastAcc,accReady=false;
-async function startAcc(){if(!window.claude)return;const db=await claude.use('db');if(!db)return;const ref=db.doc('g_cfg/accounts');
- ref.onSnapshot(sn=>{if(sn.metadata&&sn.metadata.hasPendingWrites)return;if(!(sn.metadata&&sn.metadata.fromCache))accReady=window.__accReady=true;if(sn.exists){const s=(sn.data()||{}).s;if(s&&s!==lastAcc){try{const o=JSON.parse(s);if(Array.isArray(o.acc)&&o.acc.some(a=>a.u==='Admin')){lastAcc=s;ACC.length=0;o.acc.forEach(a=>ACC.push(a));loadPerm();saveAcc();if(S.user&&S.v==='config'&&!busy())render()}}catch(e){}}}},()=>{});
+async function startAcc(){const db=await ndmDB();if(!db)return;const ref=db.doc('g_cfg/accounts');
+ ref.onSnapshot(sn=>{if(sn.metadata&&sn.metadata.hasPendingWrites)return;if(!(sn.metadata&&sn.metadata.fromCache))accReady=window.__accReady=true;if(sn.exists){const s=(sn.data()||{}).s;if(s&&s!==lastAcc){try{const o=JSON.parse(s);if(Array.isArray(o.acc)&&o.acc.some(a=>a.u==='Admin')){lastAcc=s;ACC.length=0;o.acc.forEach(a=>{if(!a.perm&&o.perm&&Array.isArray(o.perm[a.u]))a.perm=o.perm[a.u].slice();ACC.push(a)});loadPerm();saveAcc();if(S.user&&S.v==='config'&&!busy())render()}}catch(e){}}}},()=>{});
  setInterval(()=>{if(!accReady)return;saveAcc();const s=JSON.stringify({acc:ACC});if(s!==lastAcc){lastAcc=s;ref.set({s}).catch(()=>{})}},1500)}
 startAcc();
 })();
@@ -1317,7 +1414,7 @@ function apply(dt){if(!dt||!dt.k)return;
  if(dt.k==='mem'&&dt.u===S.user){if(dt.ts>lts&&dt.s!==lastMem){LSset(MK(),dt.s);lastMem=dt.s;lts=dt.ts;const a=document.activeElement;if(S.v==='ia'&&!iaBusy&&!(a&&a.tagName==='TEXTAREA'))V.ia()}}
  else if(dt.k==='log'){try{const r=JSON.parse(dt.s),L=jget(kL(),[]),key=x=>x.u+'|'+x.t+'|'+x.y+'|'+x.a,seen=new Set(L.map(key));let n=0;r.forEach(x=>{if(!seen.has(key(x))){L.push(x);n++}});if(n){L.sort((a,b)=>a.t-b.t);LSset(kL(),JSON.stringify(L.slice(-400)))}}catch(e){}}
  else if(dt.k==='time'){const T=jget(kT(),{});if(+dt.s>(T[dt.u]||0)){T[dt.u]=+dt.s;LSset(kT(),JSON.stringify(T))}}}
-async function start(){if(col||!S.user||!window.claude)return;const db=await claude.use('db');if(!db)return;col=db.collection('x_'+SL[S.inst||0]);
+async function start(){if(col||!S.user)return;const db=await ndmDB();if(!db)return;col=db.collection('x_'+SL[S.inst||0]);
  col.onSnapshot(sn=>{sn.docChanges().forEach(c=>{if(c.type==='removed')return;const d=c.doc;if(d.metadata&&d.metadata.hasPendingWrites)return;apply(d.data())});if(!(sn.metadata&&sn.metadata.fromCache))ready=true},()=>{})}
 setInterval(()=>{if(!ready||!col||!S.user)return;const id=uid(S.user);
  const s=LSget(MK())||'';try{const m=JSON.parse(s||'{}');if(((m.chat||[]).length||(m.tpl||[]).length)&&s!==lastMem){lastMem=s;lts=Date.now();col.doc('mem_'+id).set({u:S.user,k:'mem',s,ts:lts}).catch(()=>{})}}catch(e){}
@@ -1326,7 +1423,7 @@ setInterval(()=>{if(!ready||!col||!S.user)return;const id=uid(S.user);
 const oen=enter;let wait=0;
 function doEnter(){oen();if($('app').style.display==='block')start()}
 enter=window.enter=function(){const u=$('u').value.trim(),pw=$('p').value,ok=ACC.some(a=>a.u.toLowerCase()===u.toLowerCase()&&a.p===pw);
- if(!ok&&!window.__accReady&&window.claude&&!wait){wait=1;$('lerr').innerHTML='<span class="tag">Sincronizando cuentas…</span>';let n=0;const t=setInterval(()=>{n++;if(window.__accReady||n>12){clearInterval(t);wait=0;doEnter()}},500);return}
+ if(!ok&&!window.__accReady&&(window.__dbOn||window.__dbWait)&&!wait){wait=1;$('lerr').innerHTML='<span class="tag">Sincronizando cuentas…</span>';let n=0;const t=setInterval(()=>{n++;if(window.__accReady||n>12){clearInterval(t);wait=0;doEnter()}},500);return}
  doEnter()};
 })();
 
@@ -1363,7 +1460,7 @@ window.addCamp=function(){const n=$('cn').value.trim();if(!n)return;S.camp.push(
 const oca=V.camp;V.camp=function(){oca();const t=$('view').querySelector('table');if(t)[...t.rows].forEach((r,k)=>{if(!k){r.cells[3].insertAdjacentHTML('afterend','<th>Fecha de inicio</th><th>Fecha de término</th>');return}const i=k-1,c=S.camp[i];if(!c)return;r.cells[3].insertAdjacentHTML('afterend',`<td>${ec('camp',i,'fi','date')||fdt(c.fi)}</td><td>${ec('camp',i,'ft','date')||fdt(c.ft)}</td>`)});const d=$('cdu');if(d)d.insertAdjacentHTML('afterend','<label>Fecha de inicio</label><input id="cfi" type="date"><label>Fecha de término</label><input id="cft" type="date">')};
 const hx=s=>[...s].map(c=>c.charCodeAt(0).toString(36)).join('_');
 const norm=(L,T)=>{L=L.slice().sort((a,b)=>a.t-b.t||((a.u+a.a)<(b.u+b.a)?-1:1)).slice(-400);const T2={};Object.keys(T).sort().forEach(k=>T2[k]=T[k]);return JSON.stringify({L,T:T2})};
-let st=false;async function startU(){if(st||!S.user||!window.claude)return;const db=await claude.use('db');if(!db)return;st=true;const sl=SL[S.inst||0],u=S.user,col=S.col,km='ndm:mem:'+col+':'+u,kL='ndm:log:'+col,kT='ndm:time:'+col,rm=db.doc('u_'+sl+'/m_'+hx(u)),rl=db.doc('u_'+sl+'/log');let lm,ll,aM=0,aL=0;
+let st=false;async function startU(){if(st||!S.user)return;const db=await ndmDB();if(!db)return;st=true;const sl=SL[S.inst||0],u=S.user,col=S.col,km='ndm:mem:'+col+':'+u,kL='ndm:log:'+col,kT='ndm:time:'+col,rm=db.doc('u_'+sl+'/m_'+hx(u)),rl=db.doc('u_'+sl+'/log');let lm,ll,aM=0,aL=0;
  rm.onSnapshot(sn=>{if(sn.metadata&&sn.metadata.hasPendingWrites)return;if(!(sn.metadata&&sn.metadata.fromCache))aM=1;if(sn.exists){const s=(sn.data()||{}).s;if(s&&s!==lm){lm=s;LSset(km,s);const a=document.activeElement;if(S.v==='ia'&&!(a&&/^(TEXTAREA|INPUT)$/.test(a.tagName)))V.ia()}}},()=>{});
  rl.onSnapshot(sn=>{if(sn.metadata&&sn.metadata.hasPendingWrites)return;if(!(sn.metadata&&sn.metadata.fromCache))aL=1;if(sn.exists){const s=(sn.data()||{}).s;if(s&&s!==ll){try{const o=JSON.parse(s),L=jget(kL,[]),T=jget(kT,{}),seen=new Set(L.map(x=>x.t+x.u+x.a));(o.L||[]).forEach(x=>{if(!seen.has(x.t+x.u+x.a))L.push(x)});Object.keys(o.T||{}).forEach(k=>{T[k]=Math.max(T[k]||0,o.T[k])});LSset(kL,JSON.stringify(L.slice(-400)));LSset(kT,JSON.stringify(T));ll=s}catch(e){}}}},()=>{});
  setInterval(()=>{if(aM){const s=LSget(km);if(s&&s!==lm){lm=s;rm.set({s}).catch(()=>{})}}if(aL){const s=norm(jget(kL,[]),jget(kT,{}));if(s!==ll){ll=s;rl.set({s}).catch(()=>{})}}},2500)}
@@ -1427,29 +1524,141 @@ window.netConnect=function(k){const id=CF().metaId;
  if(!id){window.open(k==='fb'?'https://www.facebook.com/':'https://www.instagram.com/accounts/login/','_blank');S.rtab='feed';V.redes();toast('Falta el ID de la app de Meta para pedir los permisos. Mientras tanto escribe el link o usuario para ver el feed.');return}
  window.open('https://www.facebook.com/v21.0/dialog/oauth?client_id='+enc(id)+'&redirect_uri='+enc(uri())+'&response_type=token&scope='+enc('public_profile,pages_show_list,pages_read_engagement,instagram_basic')+'&state=ndm_'+k,'_blank');
  toast('Se abrió una pestaña de Facebook para que autorices los permisos.')};
-window.rcon=function(k){if(S.rcon[k]){S.rcon[k]=0;F()[k]='';logEv('c','Desconectó '+NN[k]);V.redes()}else netConnect(k)};
-async function gotFb(tok,k){try{const r=await fetch('https://graph.facebook.com/v21.0/me/accounts?fields=name,link,instagram_business_account%7Busername%7D&access_token='+enc(tok)),j=await r.json();if(j.error)throw new Error(j.error.message);const pg=(j.data||[]).map(p=>({n:p.name,l:p.link||'https://www.facebook.com/'+p.id,ig:(p.instagram_business_account||{}).username||''}));if(!pg.length){toast('La cuenta no administra ninguna página de Facebook. Escribe el link de la página para ver su feed.');return}
-  const f=F();f.pages=pg;f.pi=0;f.fb=pg[0].l;if(pg[0].ig){f.ig=pg[0].ig;S.rcon.ig=1}S.rcon.fb=1;logEv('c','Conectó Facebook'+(pg[0].ig?' e Instagram':''));S.rtab='feed';V.redes();toast('Conectado: '+pg[0].n)}catch(e){toast('No pude leer la cuenta: '+e.message)}}
+window.rcon=function(k){if(S.rcon[k]){S.rcon[k]=0;F()[k]='';delete API[ak(k)];delete PRO[ak(k)];if(k==='fb')try{localStorage.removeItem(MKEY())}catch(e){};logEv('c','Desconectó '+NN[k]);V.redes()}else netConnect(k)};
+/* ===== API oficial de Meta: publicaciones reales (Facebook) y todas las publicaciones (Instagram) ===== */
+const GV='https://graph.facebook.com/v21.0/',MKEY=()=>'ndm:mt:'+(SL[S.inst||0]||S.inst||0);
+const MT=()=>{try{const o=JSON.parse(localStorage.getItem(MKEY())||'null');if(o&&Date.now()-o.t<50*60e3)return o}catch(e){}return null};
+const API={};/* datos ya leídos, por institución y red */
+const ak=k=>(S.inst||0)+':'+k;
+async function gj(u){const r=await fetch(u),j=await r.json();if(j.error)throw new Error(j.error.message);return j}
+async function gotFb(tok,k){try{const j=await gj(GV+'me/accounts?limit=50&fields='+enc('id,name,link,access_token,picture.width(200){url},instagram_business_account{id,username}')+'&access_token='+enc(tok));
+  const pg=(j.data||[]).map(p=>({id:p.id,n:p.name,l:p.link||'https://www.facebook.com/'+p.id,ig:(p.instagram_business_account||{}).username||'',igid:(p.instagram_business_account||{}).id||'',tk:p.access_token,pic:((p.picture||{}).data||{}).url||''}));
+  if(!pg.length){toast('La cuenta no administra ninguna página de Facebook. Escribe el link de la página para ver su feed.');return}
+  try{localStorage.setItem(MKEY(),JSON.stringify({t:Date.now(),pages:pg.map(p=>({id:p.id,igid:p.igid,tk:p.tk,pic:p.pic,n:p.n}))}))}catch(e){}
+  const f=F();f.pages=pg.map(p=>({id:p.id,n:p.n,l:p.l,ig:p.ig}));f.pi=0;f.fb=pg[0].l;if(pg[0].ig){f.ig=pg[0].ig;S.rcon.ig=1}S.rcon.fb=1;delete API[ak('fb')];delete API[ak('ig')];delete PRO[ak('fb')];delete PRO[ak('ig')];
+  logEv('c','Conectó Facebook'+(pg[0].ig?' e Instagram':''));S.rtab='feed';V.redes();toast('Conectado: '+pg[0].n)}catch(e){toast('No pude leer la cuenta: '+e.message)}}
+function curPage(){const m=MT(),f=F();if(!m||!m.pages||!m.pages.length)return null;const id=(f.pages[f.pi]||{}).id;return m.pages.find(p=>p.id===id)||m.pages[0]}
+const ago=t=>{const d=(Date.now()-new Date(t))/1000;return d<3600?Math.max(1,Math.round(d/60))+' min':d<86400?Math.round(d/3600)+' h':d<604800?Math.round(d/86400)+' d':new Date(t).toLocaleDateString('es-PE',{day:'numeric',month:'short',year:'numeric'})};
+const num=n=>n>=1e6?(n/1e6).toFixed(1).replace('.0','')+' M':n>=1e3?(n/1e3).toFixed(1).replace('.0','')+' mil':String(n||0);
+const txt=s=>esc(s||'').replace(/\n/g,'<br>');
+async function loadApi(k,more){const p=curPage();if(!p)return null;const key=ak(k),c=API[key]||(API[key]={items:[],next:null,busy:0});if(c.busy)return c;c.busy=1;
+ try{if(k==='fb'){const j=await gj(more&&c.next?c.next:GV+p.id+'/posts?limit=15&fields='+enc('message,created_time,full_picture,permalink_url,attachments{media_type,unshimmed_url},reactions.summary(true).limit(0),comments.summary(true).limit(0),shares')+'&access_token='+enc(p.tk));
+   if(!c.prof)c.prof=await gj(GV+p.id+'?fields='+enc('name,fan_count,followers_count,picture.width(200){url},cover{source},category')+'&access_token='+enc(p.tk));c.items=c.items.concat(j.data||[]);c.next=(j.paging||{}).next||null}
+  else{if(!p.igid)throw new Error('La página no tiene una cuenta de Instagram profesional vinculada.');
+   if(!c.prof)c.prof=await gj(GV+p.igid+'?fields='+enc('username,name,biography,profile_picture_url,followers_count,follows_count,media_count')+'&access_token='+enc(p.tk));
+   const j=await gj(more&&c.next?c.next:GV+p.igid+'/media?limit=30&fields='+enc('caption,media_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count')+'&access_token='+enc(p.tk));c.items=c.items.concat(j.data||[]);c.next=(j.paging||{}).next||null}
+  c.err=''}catch(e){c.err=e.message}c.busy=0;return c}
+function fbNative(c){const pr=c.prof||{},pic=((pr.picture||{}).data||{}).url||'',av=pic?`<img src="${esc(pic)}" alt="">`:'';
+ return `<div class="nf fbn">${pr.cover?`<div class="fbc" style="background-image:url('${esc(pr.cover.source)}')"></div>`:''}<div class="fbp"><i class="av lg">${av}</i><b>${esc(pr.name||'')}</b><span>${num(pr.followers_count||pr.fan_count)} seguidores${pr.category?' · '+esc(pr.category):''}</span></div>
+ ${c.items.map(x=>`<div class="fpo"><div class="fph"><i class="av">${av}</i><div><b>${esc(pr.name||'')}</b><span>${ago(x.created_time)} · 🌐</span></div></div>${x.message?`<div class="fpt">${txt(x.message)}</div>`:''}${x.full_picture?`<a href="${esc(x.permalink_url)}" target="_blank" rel="noopener"><img class="fpi" src="${esc(x.full_picture)}" alt="" loading="lazy"></a>`:''}
+  <div class="fpc"><span>👍❤️ ${num(((x.reactions||{}).summary||{}).total_count)}</span><span>${num(((x.comments||{}).summary||{}).total_count)} comentarios · ${num((x.shares||{}).count)} veces compartido</span></div><div class="fpa"><a href="${esc(x.permalink_url)}" target="_blank" rel="noopener">👍 Me gusta</a><a href="${esc(x.permalink_url)}" target="_blank" rel="noopener">💬 Comentar</a><a href="${esc(x.permalink_url)}" target="_blank" rel="noopener">↗ Compartir</a></div></div>`).join('')||'<p class="nfe">La página aún no tiene publicaciones.</p>'}
+ ${c.next?`<button class="nfm" onclick="apiMore('fb')">Ver más publicaciones</button>`:''}</div>`}
+function igNative(c){const pr=c.prof||{};
+ return `<div class="nf ign"><div class="igp"><i class="av lg ring">${pr.profile_picture_url?`<img src="${esc(pr.profile_picture_url)}" alt="">`:''}</i><div class="igs"><span><b>${num(pr.media_count)}</b>publicaciones</span><span><b>${num(pr.followers_count)}</b>seguidores</span><span><b>${num(pr.follows_count)}</b>seguidos</span></div></div>
+ <div class="igb"><b>${esc(pr.name||pr.username||'')}</b>${pr.biography?`<div>${txt(pr.biography)}</div>`:''}</div>
+ <div class="igg">${c.items.map(x=>`<a href="${esc(x.permalink)}" target="_blank" rel="noopener" title="${esc((x.caption||'').slice(0,120))}"><img src="${esc(x.media_type==='VIDEO'?x.thumbnail_url||'':x.media_url||'')}" alt="" loading="lazy">${x.media_type==='VIDEO'?'<em>▶</em>':x.media_type==='CAROUSEL_ALBUM'?'<em>❐</em>':''}<span>♥ ${num(x.like_count)} 💬 ${num(x.comments_count)}</span></a>`).join('')}</div>
+ ${c.next?`<button class="nfm" onclick="apiMore('ig')">Cargar más publicaciones</button>`:''}</div>`}
+function paintApi(k){const p=document.querySelector('#view .phone[data-k="'+k+'"]'),c=API[ak(k)];if(!p||!c)return;const box=p.querySelector('.ac');if(!box)return;
+ if(c.err&&!c.items.length){/* si la API falla, se deja el módulo oficial de la red */box.insertAdjacentHTML('afterbegin',`<div class="apw" style="position:static">API de Meta: ${esc(c.err)}</div>`);return}
+ const sc=p.querySelector('.afd').scrollTop;box.innerHTML=k==='fb'?fbNative(c):igNative(c);box.classList.add('nat');p.querySelector('.afd').scrollTop=sc;feedReady(k)}
+window.apiMore=async function(k){const b=document.querySelector('#view .phone[data-k="'+k+'"] .nfm');if(b){b.disabled=true;b.textContent='Cargando…'}await loadApi(k,true);paintApi(k)};
+async function useApi(k){if(!curPage()||(k==='ig'&&!curPage().igid))return;const c=API[ak(k)];if(c&&c.items.length&&!c.err)return paintApi(k);await loadApi(k);paintApi(k)}
 function onAuth(v){let o;try{o=JSON.parse(v)}catch(e){return}const p=new URLSearchParams(String(o.h||'').replace(/^[#?]/,'')),tok=p.get('access_token');if(!tok)return toast('No se concedieron los permisos: '+(p.get('error_description')||p.get('error_reason')||'cancelado'));gotFb(tok,(p.get('state')||'').replace('ndm_',''))}
 addEventListener('storage',e=>{if(e.key==='ndm:oauth'&&e.newValue){onAuth(e.newValue);try{localStorage.removeItem('ndm:oauth')}catch(x){}}});
-window.pgSel=function(i){const f=F(),p=f.pages[i];if(!p)return;f.pi=i;f.fb=p.l;f.ig=p.ig||'';V.redes()};
-window.feedSave=function(k){const v=$('fi_'+k).value,f=F();f[k]=k==='fb'?nFb(v):k==='ig'?nIg(v):nTt(v);S.rcon[k]=f[k]?1:0;logEv('c','Cargó el feed de '+NN[k]);V.redes()};
+window.pgSel=function(i){const f=F(),p=f.pages[i];if(!p)return;f.pi=i;delete API[ak('fb')];delete API[ak('ig')];delete PRO[ak('fb')];delete PRO[ak('ig')];f.fb=p.l;f.ig=p.ig||'';V.redes()};
+window.feedSave=function(k){const v=$('fi_'+k).value,f=F();delete PRO[ak(k)];f[k]=k==='fb'?nFb(v):k==='ig'?nIg(v):nTt(v);S.rcon[k]=f[k]?1:0;logEv('c','Cargó el feed de '+NN[k]);V.redes()};
+window.ttvSave=function(){const raw=$('ttv_i').value,ids=[...raw.matchAll(/video\/(\d{8,})/g)].map(m=>m[1]),f=F();if(raw.trim()&&!ids.length){toast('Usa el link completo del video (con /video/ y el número). Los links cortos vm.tiktok.com no sirven.');return}f.ttv=[...new Set(ids)].slice(0,30);if(f.ttv.length)S.rcon.tt=1;logEv('c','Cargó '+f.ttv.length+' videos de TikTok');V.redes();toast(f.ttv.length?f.ttv.length+' videos listos en el feed de TikTok.':'Se quitaron los videos.')};
 window.metaSave=function(){CF().metaId=($('metaid').value||'').trim();toast('ID de la app guardado.');V.redes()};
-const phone=(k,inner)=>`<div class="phone"><div class="pn"></div><div class="ps">${inner}</div></div>`;
-function body(k){const f=F();
- if(k==='fb')return f.fb?`<iframe title="Feed de Facebook" src="https://www.facebook.com/plugins/page.php?href=${enc(f.fb)}&tabs=timeline&width=340&height=640&small_header=false&adapt_container_width=true&hide_cover=false&show_facepile=true" width="340" height="640" style="border:0;overflow:hidden" scrolling="no" allow="encrypted-media" loading="lazy"></iframe>`:'';
- if(k==='ig')return f.ig?`<iframe title="Feed de Instagram" src="https://www.instagram.com/${enc(f.ig)}/embed" width="340" height="640" style="border:0" scrolling="yes" loading="lazy"></iframe>`:'';
- return f.tt?`<blockquote class="tiktok-embed" cite="https://www.tiktok.com/@${esc(f.tt)}" data-unique-id="${esc(f.tt)}" data-embed-type="creator" style="max-width:340px;min-width:288px"><section><a target="_blank" href="https://www.tiktok.com/@${esc(f.tt)}">@${esc(f.tt)}</a></section></blockquote>`:''}
-V.feeds=function(){const ce=CE(),f=F(),mid=CF().metaId;
+/* Perfiles oficiales precargados por institución (índice de INST). Solo cuentas verificadas en la web oficial de cada institución. */
+const DEF={2:{fb:'https://www.facebook.com/UCV.Peru',ig:'ucv_peru',tt:'ucv_peru'}};
+const NORM={fb:v=>nFb(v),ig:v=>nIg(v),tt:v=>nTt(v)};
+function seed(){const f=F();if(f.sd===2)return f;f.sd=2;S.rcon=S.rcon||{};const d=DEF[S.inst||0]||{},L=S.links||{};['fb','ig','tt'].forEach(k=>{if(!f[k]){const v=d[k]||L[k];if(v){f[k]=NORM[k](v);S.rcon[k]=1}}});return f}
+const AP={fb:{n:'Facebook',bg:'#fff',fg:'#1877F2',bar:'#1877F2',dark:0},ig:{n:'Instagram',bg:'#fff',fg:'#d62976',bar:'linear-gradient(90deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5)',dark:0},tt:{n:'TikTok',bg:'#000',fg:'#fff',bar:'linear-gradient(90deg,#25F4EE,#FE2C55)',dark:1}};
+const IC={home:'<path d="M3 11.5 12 4l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',search:'<circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2.2"/><path d="m16 16 4.5 4.5" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>',plus:'<rect x="4" y="4" width="16" height="16" rx="4.5" fill="none" stroke="currentColor" stroke-width="2.1"/><path d="M12 8.5v7M8.5 12h7" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"/>',play:'<rect x="3.5" y="5" width="17" height="14" rx="3.5" fill="none" stroke="currentColor" stroke-width="2.1"/><path d="m10 9 5 3-5 3z"/>',user:'<circle cx="12" cy="8.5" r="4"/><path d="M4 20.5c.8-4 4-6 8-6s7.2 2 8 6z"/>',bell:'<path d="M6 10a6 6 0 0 1 12 0v4l2 3H4l2-3z"/><circle cx="12" cy="19.5" r="1.8"/>',heart:'<path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.4 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z" fill="none" stroke="currentColor" stroke-width="2"/>',chat:'<path d="M4 12a8 8 0 1 1 3.3 6.5L3.5 20l1.3-3.6A8 8 0 0 1 4 12z" fill="none" stroke="currentColor" stroke-width="2"/>',inbox:'<path d="M4 6h16v12H4z" fill="none" stroke="currentColor" stroke-width="2"/><path d="m4 7 8 6 8-6" fill="none" stroke="currentColor" stroke-width="2"/>',menu:'<path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'};
+const ic=(n,s)=>`<svg viewBox="0 0 24 24" width="${s||22}" height="${s||22}" fill="currentColor" aria-hidden="true">${IC[n]}</svg>`;
+const FH=576;/* alto del área de feed dentro del celular */
+function src(k){const f=F();return k==='fb'?(f.fb?'https://www.facebook.com/plugins/page.php?href='+enc(f.fb)+'&tabs=timeline&width=340&height=1800&small_header=true&adapt_container_width=true&hide_cover=false&show_facepile=false&lazy=false':''):k==='ig'?(f.ig?'https://www.instagram.com/'+enc(f.ig)+'/embed':''):(f.tt||(f.ttv&&f.ttv.length)?'tt:'+f.tt+':'+(f.ttv||[]).join(','):'')}
+const SBX=!!window.claude||/claudeusercontent|claude\.(ai|site)/i.test(location.hostname);
+const purl=k=>{const f=F();return k==='fb'?f.fb:k==='ig'?(f.ig?'https://www.instagram.com/'+f.ig+'/':''):(f.tt?'https://www.tiktok.com/@'+f.tt:'')};
+const hnd=k=>{const f=F();return k==='fb'?f.fb.replace(/^https?:\/\/(www\.|m\.|web\.)?facebook\.com\//i,'').replace(/\/$/,''):'@'+f[k]};
+function card(k){const a=AP[k];return `<div class="apc"><div class="api" style="animation:none">${appIcon()}</div><b>${esc(INST[S.inst||0]||'')}</b><span>${esc(hnd(k))}</span><a class="apo" href="${esc(purl(k))}" target="_blank" rel="noopener" style="background:${a.dark?'#FE2C55':a.fg}">Ver perfil real en ${a.n} ↗</a><p>La vista de claude.ai bloquea el contenido de otras webs, por eso el feed no puede mostrarse aquí. Ábrelo con el botón, o abre la plataforma desde GitHub Pages o desde el archivo index.html en tu navegador: ahí el feed real carga dentro del celular.</p></div>`}
+function body(k){const f=F(),s=src(k);if(!s)return '';if(SBX)return card(k);
+ if(k==='fb')return `<iframe title="Feed de Facebook" src="${s}" width="340" height="1800" style="border:0;overflow:hidden" scrolling="no" allow="encrypted-media" onload="feedReady('fb')"></iframe>`;
+ if(k==='ig')return `<iframe title="Feed de Instagram" src="${s}" width="340" height="${FH}" style="border:0" scrolling="yes" onload="feedReady('ig')"></iframe>`;
+ if(f.ttv&&f.ttv.length)return `<div class="ttf">${f.ttv.map((id,j)=>`<div class="tts"><iframe title="Video de TikTok" src="https://www.tiktok.com/player/v1/${esc(id)}?autoplay=${j?0:1}&loop=1&controls=1&progress_bar=1&play_button=1&volume_control=1&fullscreen_button=0&music_info=1&description=1&rel=0&native_context_menu=0" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" ${j?'':'onload="feedReady(\'tt\')"'}></iframe></div>`).join('')}</div>`;
+ return `<div class="ttw"><blockquote class="tiktok-embed" cite="https://www.tiktok.com/@${esc(f.tt)}" data-unique-id="${esc(f.tt)}" data-embed-type="creator" style="max-width:100%;min-width:0;margin:0"><section><a target="_blank" href="https://www.tiktok.com/@${esc(f.tt)}">@${esc(f.tt)}</a></section></blockquote></div>`}
+function appIcon(){const i=S.inst||0,l=LG[i];return l?`<img src="${l}" alt="">`:`<b>${esc((INST[i]||'?').replace(/^Colegio\s+/i,'').split(/\s+/).filter(w=>/^[A-ZÁÉÍÓÚÑ]/.test(w)).map(w=>w[0]).join('').slice(0,3).toUpperCase())}</b>`}
+const head=k=>k==='fb'?`<div class="ahd"><b style="color:#1877F2">Facebook</b><span class="aic">${ic('plus',20)}${ic('search',20)}${ic('chat',20)}</span></div>`
+ :k==='ig'?`<div class="ahd"><b>Instagram</b><span class="aic">${ic('heart',22)}${ic('chat',22)}</span></div>`
+ :`<div class="ahd tt"><span></span><span class="ttt"><i>Siguiendo</i><i class="on">Para ti</i></span><span class="aic">${ic('search',20)}</span></div>`;
+const nav=k=>`<div class="anv">${(k==='fb'?['home','play','user','bell','menu']:k==='ig'?['home','search','plus','play','user']:['home','search','plus','inbox','user']).map((n,j)=>`<span class="${j?'':'on'}">${n==='plus'&&k==='tt'?'<em class="ttp">+</em>':ic(n,23)}</span>`).join('')}</div>`;
+const SEEN={};
+function phone(k){const a=AP[k],b=body(k),s=src(k),now=new Date(),hh=now.getHours()%12||12,mm=String(now.getMinutes()).padStart(2,'0'),key=(S.inst||0)+k+s,skip=SEEN[key]&&Date.now()-SEEN[key]<20000;SEEN[key]=Date.now();
+ const empty=`<div class="pe"><div class="peic" style="color:${a.dark?'#fff':a.fg}">${ic('user',40)}</div><p>Conecta el perfil de ${esc(INST[S.inst||0]||'la institución')} en ${a.n} para ver aquí su feed real.</p></div>`;
+ return `<div class="phone ap ap-${k}${a.dark?' dk':''}" data-k="${k}" data-src="${esc(s)}"><div class="pn"></div><div class="ps">
+  <div class="asb"><b>${hh}:${mm}</b><span>▂▄▆ <i class="bat"></i></span></div>${head(k)}
+  <div class="afd${b?'':' ld'}">${b?`<div class="sk">${'<div class="skp"><div class="skh"><i class="skc"></i><i class="skl"></i></div><i class="skm"></i></div>'.repeat(3)}</div><div class="ac">${b}</div>`:empty}</div>${nav(k)}
+  ${skip?'':`<div class="asp" style="background:${a.bg}"><div class="api">${appIcon()}</div><div class="apn" style="color:${a.fg}">${a.n}</div><div class="apb"><i style="background:${a.bar}"></i></div><div class="apf" style="color:${a.dark?'#aaa':'#8a8a8a'}">${esc(INST[S.inst||0]||'')}</div></div>`}
+ </div></div>`}
+/* La pantalla de inicio se va cuando el feed real terminó de cargar (mínimo 1,4 s, máximo 7 s), igual que una app al abrirse. */
+function boot(k){const p=document.querySelector('#view .phone[data-k="'+k+'"]');if(!p)return;const t0=Date.now();let gone=0;
+ p._end=()=>{if(gone)return;gone=1;setTimeout(()=>{const sp=p.querySelector('.asp');if(sp){sp.classList.add('out');setTimeout(()=>sp.remove(),500)}},Math.max(0,1400-(Date.now()-t0)))};
+ if(!p.querySelector('.ac')||SBX){feedReady(k);return p._end()}setTimeout(()=>{p._end();setTimeout(()=>{const d=p.querySelector('.afd');if(d)d.classList.add('ld')},1500)},7000);setTimeout(()=>{const d=p.querySelector('.afd');if(d&&!p._ok&&!d.querySelector('.apw'))d.insertAdjacentHTML('afterbegin',`<a class="apw" href="${esc(purl(k))}" target="_blank" rel="noopener">¿No carga? Abrir el perfil real ↗</a>`)},9000);
+ if(k==='tt'){const c=p.querySelector('.ac'),mo=new MutationObserver(()=>{const f=c.querySelector('iframe');if(f){mo.disconnect();f.addEventListener('load',()=>feedReady('tt'));setTimeout(()=>feedReady('tt'),2500)}});mo.observe(c,{childList:true,subtree:true})}}
+window.feedReady=function(k){const p=document.querySelector('#view .phone[data-k="'+k+'"]');if(!p)return;p._ok=1;const d=p.querySelector('.afd');if(d)d.classList.add('ld');if(p._end)p._end()};
+V.feeds=function(){const ce=CE(),f=seed(),mid=CF().metaId,inm=esc(INST[S.inst||0]||'la institución');
  const tabs=`<div class="tabs">${[['feed','Feeds (perfiles)'],['cal','Calendario y publicaciones']].map(x=>`<button class="${(S.rtab||'cal')===x[0]?'on':''}" onclick="S.rtab='${x[0]}';V.redes()">${x[1]}</button>`).join('')}</div>`;
- const col=k=>{const b=body(k),on=!!f[k];return `<div class="card fcol"><h3>${tg(k)}</h3><div class="note" style="margin:4px 0 8px">${on?'<span class="tag ok">Feed cargado</span>':'Sin conectar'}${k==='fb'&&f.pages&&f.pages.length>1?` · <select onchange="pgSel(+this.value)">${f.pages.map((p,i)=>`<option value="${i}" ${i===f.pi?'selected':''}>${esc(p.n)}</option>`).join('')}</select>`:''}</div>
-  ${phone(k,b||`<div class="pe"><div style="font-size:34px">📱</div><p>Aquí aparecerá el feed de ${NN[k]} en versión móvil.</p></div>`)}
+ const url=k=>k==='fb'?f.fb:k==='ig'?(f.ig?'https://www.instagram.com/'+f.ig+'/':''):(f.tt?'https://www.tiktok.com/@'+f.tt:'');
+ const col=k=>{const on=!!f[k];return `<div class="card fcol"><h3>${tg(k)}</h3><div class="note" style="margin:4px 0 8px">${on?`<span class="tag ok">Feed real de ${inm}</span> · <a href="${esc(url(k))}" target="_blank" rel="noopener" style="color:var(--red)">Abrir perfil ↗</a>`:'Sin conectar'}${k==='fb'&&f.pages&&f.pages.length>1?` · <select onchange="pgSel(+this.value)">${f.pages.map((p,i)=>`<option value="${i}" ${i===f.pi?'selected':''}>${esc(p.n)}</option>`).join('')}</select>`:''}</div>
+  ${phone(k)}
   <div style="margin-top:10px"><button class="btn" onclick="netConnect('${k}')">Conectar con ${NN[k]}</button>${on&&ce?` <button class="btn g" onclick="rcon('${k}')">Desconectar</button>`:''}</div>
-  ${ce?`<label style="margin-top:8px">${k==='fb'?'Link de la página':k==='ig'?'Usuario o link de Instagram':'Usuario o link de TikTok'}</label><div class="row"><input id="fi_${k}" value="${esc(k==='fb'?f.fb:f[k])}" placeholder="${k==='fb'?'https://www.facebook.com/tu.pagina':'@tu.usuario'}"><button class="btn g" onclick="feedSave('${k}')">Ver feed</button></div>`:''}</div>`};
+  ${ce?`<label style="margin-top:8px">${k==='fb'?'Link de la página':k==='ig'?'Usuario o link de Instagram':'Usuario o link de TikTok'}</label><div class="row"><input id="fi_${k}" value="${esc(k==='fb'?f.fb:f[k])}" placeholder="${k==='fb'?'https://www.facebook.com/tu.pagina':'@tu.usuario'}"><button class="btn g" onclick="feedSave('${k}')">Ver feed</button></div>${k==='tt'?`<label style="margin-top:8px">Videos para el feed «Para ti» (pega los links, uno por línea)</label><textarea id="ttv_i" rows="3" placeholder="https://www.tiktok.com/@usuario/video/7300000000000000000">${esc((f.ttv||[]).map(id=>'https://www.tiktok.com/@'+(f.tt||'tiktok')+'/video/'+id).join('\n'))}</textarea><button class="btn g" style="margin-top:6px" onclick="ttvSave()">Guardar videos</button>`:''}`:''}</div>`};
  $('view').innerHTML=tabs+`<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(330px,1fr));margin-top:12px">${['fb','ig','tt'].map(col).join('')}</div>
- <div class="card" style="margin-top:12px"><h3>Cómo se conecta cada red</h3><p class="note">Al pulsar «Conectar» se abre una nueva pestaña de la red para iniciar sesión y autorizar los permisos. Facebook y Instagram usan el inicio de sesión de Meta (requiere el ID de una app de Meta con permisos aprobados). TikTok no permite leer el feed de otra persona desde una web: aquí se muestra el perfil público oficial de TikTok dentro de un marco móvil. Facebook e Instagram también muestran el módulo oficial de cada red, no una copia hecha por esta plataforma.</p>
+ <div class="card" style="margin-top:12px"><h3>Cómo se conecta cada red</h3><p class="note">Cada celular abre como la app: pantalla de inicio, interfaz de la red y luego el feed real y público de la institución, cargado directamente desde Facebook, Instagram y TikTok (no es una copia). Al pulsar «Conectar» se abre una nueva pestaña de la red para iniciar sesión y autorizar los permisos. Facebook e Instagram usan el inicio de sesión de Meta (requiere el ID de una app de Meta con permisos aprobados). TikTok solo permite mostrar el perfil público oficial.</p>
  ${ce?`<label>ID de la app de Meta (Facebook / Instagram)</label><div class="row"><input id="metaid" value="${esc(mid)}" placeholder="Ej.: 1234567890123456"><button class="btn g" onclick="metaSave()">Guardar</button></div><p class="note">En developers.facebook.com, agrega a la app el producto «Inicio de sesión con Facebook» y registra esta dirección como URI de redireccionamiento OAuth válido:<br><code>${esc(uri())}</code></p>`:''}</div>`;
- if(f.tt){document.querySelectorAll('script[data-tt]').forEach(s=>s.remove());const s=document.createElement('script');s.src='https://www.tiktok.com/embed.js';s.async=true;s.dataset.tt=1;document.body.appendChild(s)}};
+ ['fb','ig','tt'].forEach(boot);if(!SBX){if(f.fb)useApi('fb');if(f.ig)useApi('ig')}
+ if(f.tt&&!(f.ttv&&f.ttv.length)){document.querySelectorAll('script[data-tt]').forEach(s=>s.remove());const s=document.createElement('script');s.src='https://www.tiktok.com/embed.js';s.async=true;s.dataset.tt=1;document.body.appendChild(s)}};
+/* ===== Ventanas de perfil: foto, nombre, usuario y seguidores ===== */
+const MAN=()=>{const f=F();return f.man||(f.man={fb:{},ig:{},tt:{}})};
+const slugFb=u=>String(u||'').replace(/^https?:\/\/(www\.|m\.|web\.)?facebook\.com\//i,'').replace(/^profile\.php\?id=/,'').split(/[\/?#]/)[0];
+const PRO={};/* perfiles leídos de la API, por institución y red */
+async function profApi(k){const p=curPage();if(!p)return null;const f=F(),key=ak(k);
+ try{if(k==='fb'){const own=slugFb(f.fb),id=(own&&own!==p.id&&!(f.pages||[]).some(x=>x.id===p.id&&slugFb(x.l)===own))?own:p.id;
+   const j=await gj(GV+id+'?fields='+enc('name,username,followers_count,fan_count,picture.width(300){url}')+'&access_token='+enc(p.tk));
+   PRO[key]={n:j.name,u:j.username||own,s:j.followers_count??j.fan_count,pic:((j.picture||{}).data||{}).url,t:Date.now()}}
+  else if(k==='ig'){if(!p.igid)throw new Error('La página conectada no tiene Instagram profesional vinculado.');
+   const me=await gj(GV+p.igid+'?fields='+enc('username,name,profile_picture_url,followers_count,media_count')+'&access_token='+enc(p.tk));
+   let j=me;if(f.ig&&f.ig.toLowerCase()!==String(me.username).toLowerCase()){const b=await gj(GV+p.igid+'?fields='+enc('business_discovery.username('+f.ig+'){username,name,profile_picture_url,followers_count,media_count}')+'&access_token='+enc(p.tk));j=b.business_discovery}
+   PRO[key]={n:j.name||j.username,u:j.username,s:j.followers_count,p:j.media_count,pic:j.profile_picture_url,t:Date.now()}}
+  else return null}catch(e){PRO[key]={err:k==='fb'?'Facebook solo deja leer en vivo las páginas que administra la cuenta conectada.':e.message,t:Date.now()}}return PRO[key]}
+const fmtN=n=>n==null||n===''||isNaN(n)?'—':Number(n).toLocaleString('es-PE');
+const fdate=t=>t?new Date(t).toLocaleString('es-PE',{day:'numeric',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'';
+function picUrl(k){const f=F(),a=PRO[ak(k)];if(a&&a.pic)return a.pic;if(SBX)return '';
+ if(k==='fb'){const s=slugFb(f.fb);return s?'https://graph.facebook.com/'+enc(s)+'/picture?type=large&width=300&height=300':''}
+ const u=f[k];return u?'https://unavatar.io/'+(k==='ig'?'instagram':'tiktok')+'/'+enc(u)+'?fallback=false':''}
+function initials(){return esc((INST[S.inst||0]||'?').replace(/^Colegio\s+/i,'').split(/\s+/).filter(w=>/^[A-ZÁÉÍÓÚÑ]/.test(w)).map(w=>w[0]).join('').slice(0,3).toUpperCase())}
+function win(k,ce){const f=F(),a=AP[k],m=MAN()[k]||{},api=PRO[ak(k)],live=api&&!api.err&&api.s!=null,on=!!f[k],pic=picUrl(k),inm=INST[S.inst||0]||'';
+ const name=(api&&api.n)||m.n||inm,user=k==='fb'?((api&&api.u)||slugFb(f.fb)):('@'+((api&&api.u)||f[k]||'')),seg=live?api.s:m.s,pub=(api&&api.p!=null)?api.p:m.p;
+ const stats=[['Seguidores',seg],[k==='tt'?'Me gusta':'Publicaciones',k==='tt'?m.l:pub]];if(k==='tt')stats.splice(1,0,['Siguiendo',m.g]);
+ const accent=k==='tt'?'#FE2C55':a.fg;
+ return `<div class="pw pw-${k}"><div class="pwt"><i></i><i></i><i></i><span>${a.n}</span></div>
+ <div class="pwb">${on?`<div class="pwa" style="--ac:${accent}"><span class="pwi">${initials()}</span>${pic?`<img src="${esc(pic)}" alt="" referrerpolicy="no-referrer" onerror="this.remove()">`:''}</div>
+  <div class="pwn">${esc(name)}</div><div class="pwu">${esc(user)}</div>
+  <div class="pws">${stats.map(x=>`<div><b>${fmtN(x[1])}</b><span>${x[0]}</span></div>`).join('')}</div>
+  <div class="pwf">${live?`<span class="tag ok">En vivo · API de Meta</span> ${fdate(api.t)}`:m.t?`Datos ingresados el ${fdate(m.t)}`:(api&&api.err?'API de Meta: '+esc(api.err):'Seguidores sin registrar')}</div>
+  <a class="btn" style="text-decoration:none;display:inline-block;margin-top:10px" href="${esc(purl(k))}" target="_blank" rel="noopener">Abrir perfil ↗</a>`
+  :`<div class="pwa"><span class="pwi">${initials()}</span></div><div class="pwn">${esc(inm)}</div><p class="note">Sin conectar. Escribe el ${k==='fb'?'link de la página':'usuario'} abajo.</p>`}</div>
+ ${ce?`<div class="pwe"><label>${k==='fb'?'Link de la página de Facebook':k==='ig'?'Usuario o link de Instagram':'Usuario o link de TikTok'}</label><div class="row"><input id="fi_${k}" value="${esc(k==='fb'?f.fb:f[k])}" placeholder="${k==='fb'?'https://www.facebook.com/tu.pagina':'@tu.usuario'}"><button class="btn g" onclick="feedSave('${k}')">Guardar</button></div>
+  ${live?'':`<details${on&&m.s==null?' open':''}><summary>Ingresar seguidores manualmente</summary><div class="pwm"><div><label>Seguidores</label><input id="m_s_${k}" type="number" min="0" value="${m.s??''}"></div>${k==='tt'?`<div><label>Siguiendo</label><input id="m_g_${k}" type="number" min="0" value="${m.g??''}"></div><div><label>Me gusta</label><input id="m_l_${k}" type="number" min="0" value="${m.l??''}"></div>`:`<div><label>Publicaciones</label><input id="m_p_${k}" type="number" min="0" value="${m.p??''}"></div>`}</div><button class="btn g" style="margin-top:6px" onclick="manSave('${k}')">Guardar datos</button></details>`}
+  ${k!=='tt'?`<button class="btn" style="margin-top:8px" onclick="netConnect('${k}')">Conectar con Meta (datos en vivo)</button>`:''}${on?` <button class="btn g" style="margin-top:8px" onclick="rcon('${k}')">Quitar</button>`:''}</div>`:''}</div>`}
+window.manSave=function(k){const m=MAN(),v=id=>{const e=$(id);return e&&e.value!==''?Math.max(0,+e.value):null};m[k]=Object.assign({},m[k],{s:v('m_s_'+k),t:Date.now()});if(k==='tt'){m[k].g=v('m_g_'+k);m[k].l=v('m_l_'+k)}else m[k].p=v('m_p_'+k);logEv('c','Actualizó seguidores de '+NN[k]);V.redes();toast('Datos de '+NN[k]+' guardados.')};
+V.feeds=function(){const ce=CE(),f=seed(),mid=CF().metaId;
+ const tabs=`<div class="tabs">${[['feed','Perfiles'],['cal','Calendario y publicaciones']].map(x=>`<button class="${(S.rtab||'cal')===x[0]?'on':''}" onclick="S.rtab='${x[0]}';V.redes()">${x[1]}</button>`).join('')}</div>`;
+ $('view').innerHTML=tabs+`<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr));margin-top:12px">${['fb','ig','tt'].map(k=>win(k,ce)).join('')}</div>
+ <div class="card" style="margin-top:12px"><h3>De dónde salen los datos</h3><p class="note">La foto de perfil se trae sola desde cada red. Los seguidores de Facebook e Instagram se leen en vivo al conectar con Meta; sin esa conexión, o en TikTok (que no permite leerlos desde otra web), el equipo los ingresa a mano y se muestra la fecha.</p>
+ ${ce?`<label>ID de la app de Meta (Facebook / Instagram)</label><div class="row"><input id="metaid" value="${esc(mid)}" placeholder="Ej.: 1234567890123456"><button class="btn g" onclick="metaSave()">Guardar</button></div><p class="note">En developers.facebook.com, agrega a la app el producto «Inicio de sesión con Facebook» y registra esta dirección como URI de redireccionamiento OAuth válido:<br><code>${esc(uri())}</code></p>`:''}</div>`;
+ if(!SBX&&curPage())['fb','ig'].forEach(async k=>{if(!f[k])return;const c=PRO[ak(k)];if(c&&Date.now()-c.t<5*60e3)return;await profApi(k);if(S.rtab==='feed'&&!busyEd())V.feeds()})};
+const busyEd=()=>{const a=document.activeElement;return a&&/^(INPUT|TEXTAREA)$/.test(a.tagName)&&$('view').contains(a)};
 const or9=V.redes;V.redes=function(){if(S.rtab===undefined)S.rtab='feed';if(S.rtab==='feed')return V.feeds();or9();
  document.querySelectorAll('#view a.btn[onclick^="rcon("]').forEach(a=>{const k=/rcon\('(\w+)'\)/.exec(a.getAttribute('onclick'))[1];a.removeAttribute('href');a.removeAttribute('target');a.setAttribute('onclick',"netConnect('"+k+"');return false");a.style.cursor='pointer'});
  const n=[...document.querySelectorAll('#view .note')].find(x=>/publicaci[oó]n autom/i.test(x.textContent));if(n)n.textContent='Al pulsar «Conectar» se abre una nueva pestaña de la red para autorizar los permisos; el feed se ve en la pestaña «Feeds (perfiles)». La publicación automática requiere además la aprobación de las APIs oficiales de Meta y TikTok.'};
@@ -1604,6 +1813,88 @@ body::after{display:none!important}
 .phone .ps{height:640px;overflow:auto;padding-top:14px;background:#fff;display:flex;justify-content:center}
 .phone .ps iframe{max-width:100%}
 .phone .pe{align-self:center;text-align:center;color:#777;padding:20px}
+.phone.ap .ps{height:700px;padding:0;display:flex;flex-direction:column;justify-content:flex-start;position:relative;overflow:hidden}
+.ap .asb{height:26px;flex:none;display:flex;justify-content:space-between;align-items:flex-end;padding:0 22px 3px;font-size:12px;color:#111}
+.ap .asb span{font-size:9px;letter-spacing:-1px;display:flex;align-items:center;gap:5px}
+.ap .bat{display:inline-block;width:20px;height:9px;border:1.5px solid currentColor;border-radius:3px;position:relative}
+.ap .bat::after{content:'';position:absolute;inset:1px 4px 1px 1px;background:currentColor;border-radius:1px}
+.ap .ahd{height:46px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid #eee;background:#fff}
+.ap .ahd b{font-size:22px;letter-spacing:-.4px;font-weight:800}
+.ap .aic{display:flex;gap:12px;color:#111}
+.ap-fb .aic svg{background:#e4e6eb;border-radius:50%;padding:6px;box-sizing:content-box;width:18px;height:18px}
+.ap .afd{flex:1;position:relative;overflow:auto;background:#f0f2f5}
+.ap-ig .afd{background:#fff}
+.ap .ac{display:flex;justify-content:center;opacity:0;transition:opacity .45s ease}
+.ap .afd.ld .ac{opacity:1}.ap .afd.ld .sk{display:none}
+.ap .sk{position:absolute;inset:0;padding:10px;display:flex;flex-direction:column;gap:10px}
+.ap .skp{background:#fff;border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.ap .skh{display:flex;gap:10px;align-items:center}
+.ap .sk i{display:block;background:linear-gradient(90deg,#e9e9ec 25%,#f6f6f8 50%,#e9e9ec 75%);background-size:200% 100%;animation:skw 1.2s linear infinite;border-radius:6px}
+.ap .skc{width:38px;height:38px;border-radius:50%!important}.ap .skl{width:55%;height:12px}.ap .skm{height:120px}
+@keyframes skw{to{background-position:-200% 0}}
+.ap .anv{height:52px;flex:none;display:flex;justify-content:space-around;align-items:center;border-top:1px solid #eee;background:#fff;color:#65676b}
+.ap .anv .on{color:#111}.ap-fb .anv .on{color:#1877F2}
+.ap .pe{margin:auto;padding:30px 22px;text-align:center;color:#777}.ap .afd.ld:has(.pe){display:flex}
+.ap .peic{width:74px;height:74px;margin:0 auto 10px;border-radius:50%;border:2px solid currentColor;display:flex;align-items:center;justify-content:center}
+.ap.dk .ps,.ap.dk .ahd,.ap.dk .anv,.ap.dk .afd{background:#000;color:#fff;border-color:#1e1e1e}
+.ap.dk .asb,.ap.dk .aic,.ap.dk .anv .on{color:#fff}.ap.dk .anv{color:#9a9a9a}
+.ap.dk .sk i{background:linear-gradient(90deg,#1c1c1e 25%,#2a2a2d 50%,#1c1c1e 75%);background-size:200% 100%}.ap.dk .skp{background:#111}
+.ap.dk .ac a{color:#fff}.ap .ahd.tt{border:0}.ap .ttt{display:flex;gap:16px;font-size:15px;font-weight:600}.ap .ttt i{font-style:normal;color:#9a9a9a}.ap .ttt .on{color:#fff;border-bottom:2px solid #fff;padding-bottom:3px}
+.ap .ttp{font-style:normal;display:inline-flex;align-items:center;justify-content:center;width:40px;height:26px;border-radius:8px;background:#fff;color:#000;font-weight:800;font-size:20px;box-shadow:-3px 0 0 #25F4EE,3px 0 0 #FE2C55}
+.ap .asp{position:absolute;inset:0;z-index:3;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;transition:opacity .45s ease}
+.ap .asp.out{opacity:0;pointer-events:none}
+.ap .api{width:92px;height:92px;border-radius:24px;background:#fff;box-shadow:0 8px 26px rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;overflow:hidden;animation:apz .6s cubic-bezier(.2,.8,.2,1) both}
+.ap .api img{width:84%;height:84%;object-fit:contain}.ap .api b{font-size:28px;color:var(--red,#d92020)}
+.ap .apn{font-size:20px;font-weight:800;letter-spacing:-.3px;animation:apz .6s .1s cubic-bezier(.2,.8,.2,1) both}
+.ap .apb{width:110px;height:3px;border-radius:3px;background:rgba(127,127,127,.25);overflow:hidden}
+.ap .apb i{display:block;height:100%;width:40%;border-radius:3px;animation:apl 1.1s ease-in-out infinite}
+.ap .apf{position:absolute;bottom:26px;font-size:12px;font-weight:600;max-width:80%;text-align:center}
+.ap .apc{margin:auto;padding:26px 22px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center}
+.ap .apc b{font-size:17px}.ap .apc span{color:#888;font-size:13px}.ap .apc p{font-size:11.5px;color:#888;line-height:1.45;margin-top:6px}
+.ap .apo{margin-top:8px;color:#fff!important;text-decoration:none;font-weight:700;padding:10px 18px;border-radius:10px;font-size:14px}
+.ap .afd.ld:has(.apc){display:flex}.ap .afd.ld:has(.apc) .ac{margin:auto}
+.ap .apw{position:sticky;top:0;z-index:2;display:block;text-align:center;background:#111;color:#fff!important;font-size:12px;padding:7px;text-decoration:none}
+.ap-tt .afd.ld{background:#fff}.ap .ttw{width:100%;display:flex;justify-content:center}
+.ap .ttw .tiktok-embed,.ap .ttw iframe{width:100%!important;max-width:100%!important;min-width:0!important;margin:0!important}
+.ap .ttw iframe{height:576px!important;border:0!important;border-radius:0!important}
+.ap .ac.nat{display:block}.ap .nf{width:100%;font-size:13px;color:#050505;text-align:left}
+.ap .av{display:inline-block;width:38px;height:38px;border-radius:50%;background:#ddd;overflow:hidden;flex:none}.ap .av img{width:100%;height:100%;object-fit:cover}
+.ap .av.lg{width:76px;height:76px}.ap .av.ring{padding:3px;background:linear-gradient(45deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5)}.ap .av.ring img{border-radius:50%;border:2px solid #fff;box-sizing:border-box}
+.fbn .fbc{height:110px;background:#ccc center/cover}.fbn .fbp{background:#fff;padding:0 12px 12px;display:flex;flex-direction:column;gap:2px;margin-bottom:8px}
+.fbn .fbc+.fbp .av{margin-top:-38px;border:3px solid #fff}.fbn .fbp b{font-size:18px}.fbn .fbp span{color:#65676b;font-size:12px}
+.fbn .fpo{background:#fff;margin-bottom:8px}.fbn .fph{display:flex;gap:8px;align-items:center;padding:10px 12px 6px}.fbn .fph b{display:block;font-size:13.5px}.fbn .fph span{color:#65676b;font-size:11.5px}
+.fbn .fpt{padding:0 12px 8px;line-height:1.38;word-wrap:break-word}.fbn .fpi{width:100%;display:block}
+.fbn .fpc{display:flex;justify-content:space-between;padding:8px 12px;color:#65676b;font-size:11.5px;border-bottom:1px solid #e4e6eb}
+.fbn .fpa{display:flex;justify-content:space-around;padding:4px 0}.fbn .fpa a{color:#65676b!important;text-decoration:none;font-weight:600;font-size:12.5px;padding:6px}
+.ign .igp{display:flex;align-items:center;gap:8px;padding:12px}.ign .igp .av.lg{width:68px;height:68px}.ign .igs{display:flex;flex:1;justify-content:space-around;text-align:center}.ign .igs{gap:4px;min-width:0}.ign .igs span{font-size:10.5px;display:flex;flex-direction:column;align-items:center;flex:1}.ign .igs b{font-size:15px}
+.ign .igb{padding:0 12px 12px;line-height:1.4}.ign .igg{display:grid;grid-template-columns:repeat(3,1fr);gap:2px}
+.ign .igg a{position:relative;aspect-ratio:4/5;background:#eee;overflow:hidden;display:block}.ign .igg img{width:100%;height:100%;object-fit:cover;display:block}
+.ign .igg em{position:absolute;top:5px;right:6px;color:#fff;font-style:normal;text-shadow:0 1px 3px #000;font-size:13px}
+.ign .igg span{position:absolute;inset:auto 0 0;background:linear-gradient(transparent,rgba(0,0,0,.6));color:#fff;font-size:10.5px;padding:10px 5px 4px;opacity:0;transition:.2s}.ign .igg a:hover span{opacity:1}
+.ap .nfm{display:block;width:calc(100% - 24px);margin:10px 12px 16px;padding:9px;border:0;border-radius:8px;background:#e4e6eb;font-weight:700;cursor:pointer;color:#050505}
+.ap .nfe{text-align:center;color:#777;padding:30px}
+.ap .ac:has(.ttf){display:block;height:100%}.ap-tt .afd.ld:has(.ttf){background:#000}
+.ap .ttf{height:100%;overflow-y:auto;scroll-snap-type:y mandatory;scrollbar-width:none}.ap .ttf::-webkit-scrollbar{display:none}
+.ap .tts{height:100%;scroll-snap-align:start;scroll-snap-stop:always;background:#000}.ap .tts iframe{width:100%;height:100%;border:0;display:block}
+.ap-tt .afd:has(.ttf){overflow:hidden}
+.pw{background:#fff;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,.12);overflow:hidden;border:1px solid rgba(0,0,0,.06)}
+.pw .pwt{display:flex;align-items:center;gap:6px;padding:9px 12px;color:#fff;font-weight:700;font-size:13px}
+.pw .pwt i{width:10px;height:10px;border-radius:50%;background:rgba(255,255,255,.55)}.pw .pwt span{margin-left:6px}
+.pw-fb .pwt{background:#1877F2}.pw-ig .pwt{background:linear-gradient(90deg,#fa7e1e,#d62976,#962fbf,#4f5bd5)}.pw-tt .pwt{background:#000;box-shadow:inset 0 -3px 0 #FE2C55}
+.pw .pwb{padding:22px 18px 18px;text-align:center}
+.pw .pwa{position:relative;width:110px;height:110px;margin:0 auto 12px;border-radius:50%;padding:4px;background:var(--ac,#ccc)}
+.pw-ig .pwa{background:linear-gradient(45deg,#feda75,#fa7e1e,#d62976,#962fbf,#4f5bd5)}.pw-tt .pwa{background:linear-gradient(135deg,#25F4EE,#FE2C55)}
+.pw .pwa img,.pw .pwi{position:absolute;inset:4px;width:calc(100% - 8px);height:calc(100% - 8px);border-radius:50%;object-fit:cover;background:#fff;border:3px solid #fff;box-sizing:border-box}
+.pw .pwi{display:flex;align-items:center;justify-content:center;font-weight:800;font-size:28px;color:var(--red,#d92020)}
+.pw .pwn{font-size:18px;font-weight:800;line-height:1.25}.pw .pwu{color:#777;font-size:13px;margin-top:2px;word-break:break-all}
+.pw .pws{display:flex;justify-content:center;gap:6px;margin-top:16px}.pw .pws div{flex:1;max-width:120px;background:#f5f6f8;border-radius:12px;padding:10px 4px}
+.pw .pws b{display:block;font-size:19px}.pw .pws span{font-size:11.5px;color:#666}
+.pw .pwf{font-size:11.5px;color:#888;margin-top:12px}
+.pw .pwe{border-top:1px solid #eee;padding:12px 16px 16px;text-align:left}.pw .pwe summary{cursor:pointer;font-size:13px;margin-top:10px;color:var(--red)}
+.pw .pwm{display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:8px}
+@keyframes apz{from{opacity:0;transform:scale(.82)}to{opacity:1;transform:none}}
+@keyframes apl{0%{transform:translateX(-100%)}100%{transform:translateX(280%)}}
+
 .gg{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
 .gi{display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px;border:1px solid #e2e2e6;border-radius:10px;background:#fff;color:inherit;text-decoration:none;font:inherit;font-size:12px;cursor:pointer;text-align:center;overflow:hidden}
 .gi:hover{border-color:var(--red)}
@@ -1810,7 +2101,7 @@ function makeZip(files){const enc=new TextEncoder(),d=new Date(),dt=((d.getFullY
 function cleanClone(){const c=document.documentElement.cloneNode(true);['cfgp','cftab','cfver','cfFile','splash','cfdyn'].forEach(id=>{const e=c.querySelector('#'+id);if(e)e.remove()});c.removeAttribute('style');const b=c.querySelector('body');['data-th','data-inst','class','style'].forEach(a=>b.removeAttribute(a));
  ['login','app'].forEach(id=>{const e=c.querySelector('#'+id);if(e)e.removeAttribute('style')});['view','nav'].forEach(id=>{const e=c.querySelector('#'+id);if(e)e.innerHTML=''});c.querySelectorAll('.cm-card,.nw .nb').forEach(e=>e.remove());return'<!DOCTYPE html>\n'+c.outerHTML}
 async function sourceHtml(){try{const ac=typeof AbortController==='function'?new AbortController():null,tm=setTimeout(()=>{try{ac&&ac.abort()}catch(e){}},6000),r=await Promise.race([fetch(location.href.split('#')[0],{cache:'no-store',signal:ac?ac.signal:undefined}),new Promise((_,j)=>setTimeout(()=>j(new Error('t')),6500))]);if(r.ok){const t=await Promise.race([r.text(),new Promise((_,j)=>setTimeout(()=>j(new Error('t')),6500))]);clearTimeout(tm);if(t.indexOf('ndm:acc')>0&&t.indexOf('cfgp')>0)return t}clearTimeout(tm)}catch(e){}return cleanClone()}
-async function pullShared(){if(!window.claude||!claude.use)return null;try{const db=await Promise.race([claude.use('db'),new Promise(r=>setTimeout(()=>r(null),5000))]);if(!db)return null;const out={data:{}},T=p=>Promise.race([p,new Promise((_,r)=>setTimeout(()=>r(new Error('t')),8000))]);
+async function pullShared(){try{const db=await Promise.race([ndmDB(),new Promise(r=>setTimeout(()=>r(null),5000))]);if(!db)return null;const out={data:{}},T=p=>Promise.race([p,new Promise((_,r)=>setTimeout(()=>r(new Error('t')),8000))]);
  await Promise.all(INST.map(async(n,i)=>{try{const qs=await T(db.collection('i_'+SL[i]).get()),o={};qs.docs.forEach(d=>{const dt=d.data&&d.data(),s=dt&&dt.s;if(typeof s==='string'&&d.id!=='atlOwn'){try{o[d.id]=JSON.parse(s)}catch(e){}}});if(Object.keys(o).length)out.data[SL[i]]=o}catch(e){}}));
  try{const sn=await T(db.doc('g_cfg/accounts').get());if(sn.exists){const o=JSON.parse((sn.data()||{}).s||'{}');if(Array.isArray(o.acc))out.acc=o.acc;if(o.perm)out.perm=o.perm}}catch(e){}
  return out}catch(e){return null}}
@@ -1940,7 +2231,7 @@ window.ndmPin=function(){if($('pinbk'))return;const bk=document.createElement('d
  inp.addEventListener('input',()=>{inp.value=inp.value.replace(/\D/g,'');er.textContent=''});inp.addEventListener('keydown',e=>{if(e.key==='Enter')go();if(e.key==='Escape')close()});$('pinok').onclick=go;$('pinx').onclick=close;bk.addEventListener('mousedown',e=>{if(e.target===bk)close()});setTimeout(()=>inp.focus(),30)};
 
 /* ---------- sincronización compartida (si la plataforma la ofrece) ---------- */
-async function startSync(){if(!window.claude||!claude.use)return;let db;try{db=await claude.use('db')}catch(e){return}if(!db)return;const ref=db.doc('g_cfg/system');let last='',ready=false;
+async function startSync(){let db;try{db=await ndmDB()}catch(e){return}if(!db)return;const ref=db.doc('g_cfg/system');let last='',ready=false;
  pushFn=()=>{if(!ready)return;const s=JSON.stringify(shared());if(s!==last){last=s;ref.set({s}).catch(()=>{})}};
  ref.onSnapshot(sn=>{if(sn.metadata&&sn.metadata.hasPendingWrites)return;if(!(sn.metadata&&sn.metadata.fromCache)){if(!ready){ready=true;if(!sn.exists&&SYS.t)setTimeout(()=>pushFn&&pushFn(),50)}}
   if(sn.exists){const s=(sn.data()||{}).s;if(s&&s!==last){try{const o=JSON.parse(s);if(o&&Array.isArray(o.patches)&&(o.t||0)>(SYS.t||0)){last=s;SYS.ver=o.ver;SYS.pid=o.pid;SYS.patches=o.patches;SYS.insts=Object.assign(blank().insts,o.insts||{});SYS.cdata=o.cdata||{};SYS.t=o.t;LSset(KEY,JSON.stringify(SYS));applyAll();if(open)render()}}catch(e){}}}},()=>{})}
