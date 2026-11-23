@@ -12,7 +12,7 @@ La plataforma elige sola la base de datos:
    - Alternativa: ⚙ Configuración → **Conexión entre computadoras** → pegar la configuración → **Conectar** (solo ese navegador) → **Descargar index.html conectado**.
 3. Sin ninguna de las dos, los datos quedan solo en ese navegador.
 
-Abajo a la izquierda un indicador muestra el estado: **☁ Sincronizado**, **⚠ Solo este equipo** o **⚠ Sin permiso para guardar en la nube**.
+Abajo a la derecha (sobre el número de versión) un indicador muestra el estado: **☁ Sincronizado**, **⚠ Solo este equipo** o **⚠ Sin permiso para guardar en la nube**.
 
 Detalles técnicos: todo pasa por `ndmDB()` (primer `<script>`). Los documentos de más de 80 000 caracteres (logos, imágenes, chats largos) se guardan en partes (`clave~0`, `clave~1`, …) y se vuelven a unir al leer, para no chocar con el límite de tamaño por documento. Colecciones: `g_cfg/accounts` (cuentas y permisos), `g_cfg/system` (configuración del sistema), `i_<institución>` (datos de los módulos), `x_<institución>` y `u_<institución>` (memoria del asistente, registro y tiempo por usuario).
 
