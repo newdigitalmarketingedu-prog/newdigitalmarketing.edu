@@ -1568,10 +1568,13 @@ const MT=()=>{try{const o=JSON.parse(localStorage.getItem(MKEY())||'null');if(o&
 const API={};/* datos ya leídos, por institución y red */
 const ak=k=>(S.inst||0)+':'+k;
 async function gj(u){const r=await fetch(u),j=await r.json();if(j.error)throw new Error(j.error.message);return j}
+const IG_DEF={'maria-del-angel':'17841403266702307'};
 async function gotFb(tok,k){try{const j=await gj(GV+'me/accounts?limit=50&fields='+enc('id,name,link,access_token,picture.width(200){url},instagram_business_account{id,username}')+'&access_token='+enc(tok));
   const pg=(j.data||[]).map(p=>({id:p.id,n:p.name,l:p.link||'https://www.facebook.com/'+p.id,ig:(p.instagram_business_account||{}).username||'',igid:(p.instagram_business_account||{}).id||'',tk:p.access_token,pic:((p.picture||{}).data||{}).url||''}));
   if(!pg.length){toast('La cuenta no administra ninguna página de Facebook. Escribe el link de la página para ver su feed.');return}
-  try{localStorage.setItem(MKEY(),JSON.stringify({t:Date.now(),pages:pg.map(p=>({id:p.id,igid:p.igid,tk:p.tk,pic:p.pic,n:p.n}))}))}catch(e){}
+  /* Instagram por separado: si la página no tiene Instagram vinculado, se usa la cuenta de Instagram del portfolio comercial (por su identificador) */
+  if(!pg.some(p=>p.igid)){const iid=(CF().igId||IG_DEF[SL[S.inst||0]]||'').trim();if(iid){try{const u=await gj(GV+iid+'?fields=username&access_token='+enc(tok));pg.forEach(p=>{p.igid=iid;p.ig=u.username||'';p.igtk=tok})}catch(e){toast('Instagram: '+e.message)}}}
+  try{localStorage.setItem(MKEY(),JSON.stringify({t:Date.now(),pages:pg.map(p=>({id:p.id,igid:p.igid,tk:p.tk,igtk:p.igtk,pic:p.pic,n:p.n}))}))}catch(e){}
   const f=F();f.pages=pg.map(p=>({id:p.id,n:p.n,l:p.l,ig:p.ig}));f.pi=0;f.fb=pg[0].l;if(pg[0].ig){f.ig=pg[0].ig;S.rcon.ig=1}S.rcon.fb=1;delete API[ak('fb')];delete API[ak('ig')];delete PRO[ak('fb')];delete PRO[ak('ig')];
   logEv('c','Conectó Facebook'+(pg[0].ig?' e Instagram':''));S.rtab='feed';V.redes();toast('Conectado: '+pg[0].n)}catch(e){toast('No pude leer la cuenta: '+e.message)}}
 function curPage(){const m=MT(),f=F();if(!m||!m.pages||!m.pages.length)return null;const id=(f.pages[f.pi]||{}).id;return m.pages.find(p=>p.id===id)||m.pages[0]}
@@ -1582,8 +1585,8 @@ async function loadApi(k,more){const p=curPage();if(!p)return null;const key=ak(
  try{if(k==='fb'){const j=await gj(more&&c.next?c.next:GV+p.id+'/posts?limit=15&fields='+enc('message,created_time,full_picture,permalink_url,attachments{media_type,unshimmed_url},reactions.summary(true).limit(0),comments.summary(true).limit(0),shares')+'&access_token='+enc(p.tk));
    if(!c.prof)c.prof=await gj(GV+p.id+'?fields='+enc('name,fan_count,followers_count,picture.width(200){url},cover{source},category')+'&access_token='+enc(p.tk));c.items=c.items.concat(j.data||[]);c.next=(j.paging||{}).next||null}
   else{if(!p.igid)throw new Error('La página no tiene una cuenta de Instagram profesional vinculada.');
-   if(!c.prof)c.prof=await gj(GV+p.igid+'?fields='+enc('username,name,biography,profile_picture_url,followers_count,follows_count,media_count')+'&access_token='+enc(p.tk));
-   const j=await gj(more&&c.next?c.next:GV+p.igid+'/media?limit=30&fields='+enc('caption,media_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count')+'&access_token='+enc(p.tk));c.items=c.items.concat(j.data||[]);c.next=(j.paging||{}).next||null}
+   if(!c.prof)c.prof=await gj(GV+p.igid+'?fields='+enc('username,name,biography,profile_picture_url,followers_count,follows_count,media_count')+'&access_token='+enc(p.igtk||p.tk));
+   const j=await gj(more&&c.next?c.next:GV+p.igid+'/media?limit=30&fields='+enc('caption,media_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count')+'&access_token='+enc(p.igtk||p.tk));c.items=c.items.concat(j.data||[]);c.next=(j.paging||{}).next||null}
   c.err=''}catch(e){c.err=e.message}c.busy=0;return c}
 function fbNative(c){const pr=c.prof||{},pic=((pr.picture||{}).data||{}).url||'',av=pic?`<img src="${esc(pic)}" alt="">`:'';
  return `<div class="nf fbn">${pr.cover?`<div class="fbc" style="background-image:url('${esc(pr.cover.source)}')"></div>`:''}<div class="fbp"><i class="av lg">${av}</i><b>${esc(pr.name||'')}</b><span>${num(pr.followers_count||pr.fan_count)} seguidores${pr.category?' · '+esc(pr.category):''}</span></div>
@@ -1664,8 +1667,8 @@ async function profApi(k){const p=curPage();if(!p)return null;const f=F(),key=ak
    const j=await gj(GV+id+'?fields='+enc('name,username,followers_count,fan_count,picture.width(300){url}')+'&access_token='+enc(p.tk));
    PRO[key]={n:j.name,u:j.username||own,s:j.followers_count??j.fan_count,pic:((j.picture||{}).data||{}).url,t:Date.now()}}
   else if(k==='ig'){if(!p.igid)throw new Error('La página conectada no tiene Instagram profesional vinculado.');
-   const me=await gj(GV+p.igid+'?fields='+enc('username,name,profile_picture_url,followers_count,media_count')+'&access_token='+enc(p.tk));
-   let j=me;if(f.ig&&f.ig.toLowerCase()!==String(me.username).toLowerCase()){const b=await gj(GV+p.igid+'?fields='+enc('business_discovery.username('+f.ig+'){username,name,profile_picture_url,followers_count,media_count}')+'&access_token='+enc(p.tk));j=b.business_discovery}
+   const me=await gj(GV+p.igid+'?fields='+enc('username,name,profile_picture_url,followers_count,media_count')+'&access_token='+enc(p.igtk||p.tk));
+   let j=me;if(f.ig&&f.ig.toLowerCase()!==String(me.username).toLowerCase()){const b=await gj(GV+p.igid+'?fields='+enc('business_discovery.username('+f.ig+'){username,name,profile_picture_url,followers_count,media_count}')+'&access_token='+enc(p.igtk||p.tk));j=b.business_discovery}
    PRO[key]={n:j.name||j.username,u:j.username,s:j.followers_count,p:j.media_count,pic:j.profile_picture_url,t:Date.now()}}
   else return null}catch(e){PRO[key]={err:k==='fb'?'Facebook solo deja leer en vivo las páginas que administra la cuenta conectada.':e.message,t:Date.now()}}return PRO[key]}
 const fmtN=n=>n==null||n===''||isNaN(n)?'—':Number(n).toLocaleString('es-PE');
