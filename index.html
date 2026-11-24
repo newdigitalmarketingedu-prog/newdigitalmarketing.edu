@@ -1156,7 +1156,7 @@ function simCard(){const L=S.comp.filter(c=>(c.x||'').trim());let h='<h3>Indicad
  const R0=Object.values(G).map(g=>{const ins=simLv([...new Set(g.map(x=>x.n))]);const lab=g.map(x=>x.f).sort((a,b)=>a.length-b.length)[0];return [lab.charAt(0).toUpperCase()+lab.slice(1),ins,g]}).sort((a,b)=>b[1].length-a[1].length||a[0].localeCompare(b[0]));
  if(!R0.length)return h+'<p class="note">No se encontraron características en las descripciones registradas.</p>';
  window.SIMR=R0;const ce=CE(),NC=L.some(c=>simRk(c.n)===3)?4:3;
- return h+'<table><tr><th>Características</th><th colspan="'+NC+'">Instituciones que la tienen</th><th>Coinciden</th>'+(ce?'<th>Edición</th>':'')+'</tr>'+R0.map(([k,w,g],ri)=>{const ed=ce&&S.simE===ri;return `<tr><td>${ed?`<input id="sim_e" value="${qa(k)}" style="min-width:160px">`:`<b>${esc(k)}</b>`}</td>${[...Array(NC)].map((_,lv)=>`<td>${w.filter(n=>simRk(n)===lv).map(n=>`<span class="tag" title="${qa(g.filter(x=>x.n===n).map(x=>x.f).join(' · '))}">${esc(n)}</span>`).join(' ')}</td>`).join('')}<td><span class="tag ${w.length===L.length&&L.length>1?'wn':w.length>1?'ok':''}">${w.length>1?w.length+' de '+L.length:'Única'}</span></td>${ce?`<td style="white-space:nowrap">${ed?`<button class="btn" title="Guardar" onclick="simSave(${ri})">💾</button> <button class="btn g" title="Cancelar" onclick="S.simE=null;R()">↩</button>`:`<button class="btn g" title="Editar" onclick="S.simE=${ri};R()">✏️</button> <button class="btn g" title="Eliminar" onclick="simDel(${ri})">✖</button>`}</td>`:''}</tr>`}).join('')+'</table><p class="note">Se genera leyendo la descripción de cada competidor (separa las características por comas, puntos o “y”). Pasa el cursor sobre un colegio para ver cómo lo escribió.</p>'}
+ return h+'<table><tr><th>Características</th><th colspan="'+NC+'">Instituciones que la tienen</th><th>Coinciden</th>'+(ce?'<th>Edición</th>':'')+'</tr>'+R0.map(([k,w,g],ri)=>{const ed=ce&&S.simE===ri;return `<tr><td>${ed?`<input id="sim_e" value="${qa(k)}" style="min-width:160px">`:`<b>${esc(k)}</b>`}</td>${[...Array(NC)].map((_,lv)=>`<td>${w.filter(n=>simRk(n)===lv).map(n=>`<span class="tag" title="${qa(g.filter(x=>x.n===n).map(x=>x.f).join(' · '))}">${esc(n)}</span>`).join(' ')}</td>`).join('')}<td style="white-space:nowrap"><span class="tag ${w.length===L.length&&L.length>1?'wn':w.length>1?'ok':''}" style="white-space:nowrap">${w.length>1?w.length+' de '+L.length:'Única'}</span></td>${ce?`<td style="white-space:nowrap">${ed?`<button class="btn" title="Guardar" onclick="simSave(${ri})">💾</button> <button class="btn g" title="Cancelar" onclick="S.simE=null;R()">↩</button>`:`<button class="btn g" title="Editar" onclick="S.simE=${ri};R()">✏️</button> <button class="btn g" title="Eliminar" onclick="simDel(${ri})">✖</button>`}</td>`:''}</tr>`}).join('')+'</table><p class="note">Se genera leyendo la descripción de cada competidor (separa las características por comas, puntos o “y”). Pasa el cursor sobre un colegio para ver cómo lo escribió.</p>'}
 /* Editar o eliminar una característica: cambia el texto en la descripción de cada competidor que la tiene */
 function simApply(ri,nv){const r=(window.SIMR||[])[ri];if(!r)return;const g=r[2];
  S.comp.forEach(c=>{const mine=g.filter(x=>x.n===c.n).map(x=>x.f);if(!mine.length)return;let done=0;
@@ -1167,6 +1167,60 @@ window.simDel=function(ri){const r=(window.SIMR||[])[ri];if(!r||!confirm('¿Elim
 window.simAdd=function(){const v=(($('sim_n')||{}).value||'').trim(),ns=[...document.querySelectorAll('.sim_c:checked')].map(e=>e.value);if(!v){toast('Escribe la característica.');return}if(!ns.length){toast('Marca al menos una institución.');return}
  S.comp.forEach(c=>{if(ns.includes(c.n)){const x=(c.x||'').trim().replace(/[.,;\s]+$/,'');c.x=x?x+', '+v:v}});logEv('c','Agregó una característica de la competencia');R()};
 const oin4=V.intel;V.intel=function(){oin4();const t=$('view').querySelector('table');const c=t&&t.closest('.card');if(c)c.insertAdjacentHTML('afterend',`<div class="card scroll" style="grid-column:1/-1">${simCard()}</div>`)};
+
+/* ---------- Competencia directa: nuestra institución en 3 filas (Secundaria, Primaria, Inicial), con nombre editable ---------- */
+const ownLv=()=>{if(!/colegio|school/i.test(S.col||''))return null;if(!Array.isArray(S.ownL)||S.ownL.length!==3){const o=S.own||{d:'—',f:'—'};S.ownL=['Secundaria','Primaria','Inicial'].map(l=>({n:S.col+' - '+l,d:o.d||'—',m:S.cfg.matricula,p:S.cfg.pension,f:o.f||'—'}))}return S.ownL};
+window.ownLSave=function(i){const o=S.ownL[i];if(!o)return;o.n=$('ol_n').value.trim()||o.n;o.d=$('ol_d').value.trim()||'—';o.m=+$('ol_m').value||0;o.p=+$('ol_p').value||0;o.f=$('ol_f').value.trim()||'—';S.ed=null;logEv('c','Editó '+o.n+' en Competencia directa');R()};
+const oin5=V.intel;V.intel=function(){oin5();const L=ownLv();if(!L)return;const v=$('view'),t=v.querySelector('table'),ce=CE();
+ if(t&&t.rows[1]){const r1=t.rows[1];
+  const h=L.map((o,i)=>{const e=ce&&S.ed&&S.ed[0]==='ownL'&&S.ed[1]===i;return `<tr><td>${e?`<input id="ol_n" value="${qa(o.n)}" style="min-width:200px">`:`<b>${esc(o.n)}</b>`}</td><td>${e?`<input id="ol_d" value="${qa(o.d)}">`:esc(o.d)}</td><td>${e?`<input id="ol_m" type="number" value="${o.m}" style="width:90px">`:'S/ '+o.m}</td><td>${e?`<input id="ol_p" type="number" value="${o.p}" style="width:90px">`:'S/ '+o.p}</td><td>—</td><td>${e?`<input id="ol_f" value="${qa(o.f)}">`:esc(o.f)}</td>${ce?`<td style="white-space:nowrap">${e?`<button class="btn" title="Guardar" onclick="ownLSave(${i})">💾</button>`:`<button class="btn g" title="Editar" onclick="S.ed=['ownL',${i}];R()">✏️</button>`}</td>`:''}</tr>`}).join('');
+  r1.insertAdjacentHTML('afterend',h);r1.remove()}
+ const dc=[...v.querySelectorAll('.card')].find(x=>(x.querySelector('h3')||{}).textContent==='Descripción de competencia');
+ if(dc){const hh=dc.querySelector('h3'),np=dc.querySelector(':scope>p.note');if(np&&!S.comp.length)np.remove();hh.insertAdjacentHTML('afterend',L.map(o=>`<div class="sw" style="align-items:flex-start;gap:10px"><div style="flex:1;min-width:0"><b>${esc(o.n)}</b></div></div>`).join(''))}};
+
+/* ---------- Inteligencia de mercado: descargar todo en PDF (la redacción corregida solo aparece en el PDF) ---------- */
+const PDF_SW='Incluye|Busca|Buscan|Su|Sus|Complementa|Complementan|Cuenta|Cuentan|Ofrece|Ofrecen|Brinda|Brindan|Además|Asimismo|Mantiene|Mantienen|Tiene|Tienen|Desarrolla|Desarrollan|Promueve|Promueven|Dispone|Disponen|Entre|El|La|Los|Las|Este|Esta|Estos|Estas|También|Posee|Poseen|Realiza|Realizan|Fomenta|Fomentan|Garantiza|Garantizan|Trabaja|Trabajan|Utiliza|Utilizan|Destaca|Destacan|Se|Sobresale|Prioriza|Organiza|Organizan|Impulsa|Impulsan|Forma|Forman|Contempla|Comprende|Integra|Integran|Refuerza|Refuerzan|Por|Para|En|Con|Gracias|Finalmente|Igualmente|De';
+function pdfFix(t){t=String(t||'').replace(/\s+/g,' ').replace(/\s+([,.;:])/g,'$1').replace(/([,;:])(?=\S)/g,'$1 ').replace(/,\s*,+/g,',').replace(/\.{2,}/g,'.').trim();if(!t)return '';
+ t=t.replace(new RegExp(',\\s+(?=(?:'+PDF_SW+')\\b)','g'),'. ').replace(/;\s+(?=[A-ZÁÉÍÓÚÑ])/g,'. ');
+ const se=t.split(/(?<=[.!?])\s+/).map(x=>x.trim()).filter(Boolean).map(x=>{x=x.replace(/[.,;:\s]+$/,'');
+  x=x.replace(/^(Inicial|Primaria|Secundaria)\s+(el|la|los|las)\s/,(m,l,ar)=>'En '+l+', '+ar+' ').replace(/^((?:Complementa|Complementan|Refuerza|Refuerzan|Fortalece|Fortalecen)\s+[^,]{1,40}),\s+(?=[a-záéíóúñ])/,'$1 con ');
+  if(x.split(/,\s+/).length>=5&&!new RegExp('^(?:'+PDF_SW+')\\b').test(x)&&/^[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+s\b/.test(x))x='Ofrece '+x.charAt(0).toLowerCase()+x.slice(1);
+  const it=x.split(/,\s+/);if(it.length>=3&&!/\s(y|e|o|u)\s[^,]*$/i.test(it[it.length-1])&&!/^(y|e|o)\s/i.test(it[it.length-1])){const last=it.pop();x=it.join(', ')+(/^(i|hi)[^aeo]/i.test(last)?' e ':' y ')+last}
+  else if(it.length===2&&!/^(y|e|o|u|que|como|donde|el|la|los|las|enfocad|orientad|dirigid)\b/i.test(it[1])&&!/\s(y|e|o|u)\s/.test(it[0])&&it[1].split(' ').length<=4&&!/[A-ZÁÉÍÓÚÑ]/.test(it[1].charAt(0))){x=it[0]+(/^(i|hi)[^aeo]/i.test(it[1])?' e ':' y ')+it[1]}
+  return x.charAt(0).toUpperCase()+x.slice(1)+'.'});
+ return se.join(' ')}
+window.pdfFix=pdfFix;
+const pdfLoad=src=>new Promise((ok,ko)=>{const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=()=>ko(new Error(src));document.head.appendChild(s)});
+window.intelPDF=async function(){const b=$('intelpdf');if(b){b.disabled=true;b.textContent='Generando PDF…'}
+ try{if(!window.jspdf)await pdfLoad('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+  if(!(window.jspdf&&window.jspdf.jsPDF&&window.jspdf.jsPDF.API.autoTable))await pdfLoad('https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js');
+  const doc=new jspdf.jsPDF({unit:'pt',format:'a4'}),W=doc.internal.pageSize.getWidth(),H=doc.internal.pageSize.getHeight(),M=40,RED=[217,32,32];let y=M;
+  const need=h=>{if(y+h>H-M){doc.addPage();y=M}};
+  const head=t=>{need(40);doc.setFont('helvetica','bold');doc.setFontSize(14);doc.setTextColor(...RED);doc.text(t,M,y);y+=8;doc.setDrawColor(...RED);doc.setLineWidth(1);doc.line(M,y,W-M,y);y+=18;doc.setTextColor(0)};
+  doc.setFont('helvetica','bold');doc.setFontSize(18);doc.setTextColor(...RED);doc.text('Inteligencia de Mercado y Competencia',M,y);y+=20;
+  doc.setFont('helvetica','normal');doc.setFontSize(11);doc.setTextColor(90);doc.text(S.col+' · '+new Date().toLocaleDateString('es-PE',{day:'numeric',month:'long',year:'numeric'}),M,y);y+=28;doc.setTextColor(0);
+  const own=(typeof ownLv==='function'&&ownLv())||[],ins=own.map(o=>({n:o.n,x:''})).concat(S.comp.map(c=>({n:c.n,x:c.x||''})));
+  head('Instituciones y descripción');
+  ins.forEach(c=>{doc.setFont('helvetica','bold');doc.setFontSize(11.5);const nl=doc.splitTextToSize(c.n,W-2*M);need(nl.length*14+20);doc.text(nl,M,y);y+=nl.length*14;
+   doc.setFont('helvetica','normal');doc.setFontSize(10.5);const tx=pdfFix(c.x);if(!tx){doc.setTextColor(120);doc.text('Sin descripción.',M,y+2);doc.setTextColor(0);y+=20;return}
+   doc.splitTextToSize(tx,W-2*M).forEach(l=>{need(14);doc.text(l,M,y+2);y+=14});y+=10});
+  const op=+S.cfg.pension||0,pc=p=>op?(p>op?'+':'')+Math.round((p-op)/op*100)+'%':'—';
+  y+=6;head('Competencia directa');
+  doc.autoTable({startY:y,margin:{left:M,right:M},styles:{font:'helvetica',fontSize:9,cellPadding:4,valign:'top'},headStyles:{fillColor:RED,textColor:255},alternateRowStyles:{fillColor:[247,247,247]},
+   head:[['Institución','Distrito / Urbanización','Matrícula','Pensión','Vs. nuestra pensión','Fortaleza']],
+   body:own.map(o=>[o.n,o.d,'S/ '+o.m,'S/ '+o.p,'—',o.f]).concat(S.comp.map(c=>[c.n,c.d,'S/ '+c.m,'S/ '+c.p,pc(+c.p||0),c.f]))});
+  y=doc.lastAutoTable.finalY+30;
+  simCard();const R0=window.SIMR||[],L=S.comp.filter(c=>(c.x||'').trim()),NC=L.some(c=>simRk(c.n)===3)?4:3;head('Indicadores');
+  if(!R0.length){doc.setFontSize(10.5);doc.text('Agrega descripciones a los competidores para ver sus características.',M,y);}
+  else doc.autoTable({startY:y,margin:{left:M,right:M},styles:{font:'helvetica',fontSize:8.5,cellPadding:4,valign:'top'},headStyles:{fillColor:RED,textColor:255,halign:'center'},alternateRowStyles:{fillColor:[247,247,247]},
+   columnStyles:{0:{fontStyle:'bold',cellWidth:110}},
+   head:[['Características',{content:'Instituciones que la tienen',colSpan:NC},'Coinciden']],
+   body:R0.map(([k,w])=>[k,...[...Array(NC)].map((_,lv)=>w.filter(n=>simRk(n)===lv).join('\n')),w.length>1?w.length+' de '+L.length:'Única'])});
+  const n=doc.internal.getNumberOfPages();for(let i=1;i<=n;i++){doc.setPage(i);doc.setFontSize(8.5);doc.setTextColor(140);doc.text(S.col+' · Página '+i+' de '+n,W-M,H-20,{align:'right'})}
+  doc.save('Inteligencia de mercado - '+S.col+'.pdf');logEv('c','Descargó el PDF de Inteligencia de mercado')}
+ catch(e){toast('No se pudo generar el PDF (revisa tu conexión a internet).')}
+ finally{const b=$('intelpdf');if(b){b.disabled=false;b.textContent='📄 Descargar información en documento PDF'}}};
+const oin6=V.intel;V.intel=function(){oin6();$('view').insertAdjacentHTML('beforeend','<div style="margin-top:14px;text-align:center"><button class="btn" id="intelpdf" onclick="intelPDF()">📄 Descargar información en documento PDF</button></div>')};
 
 /* ---------- Finanzas: costo por lead editable ---------- */
 const oca3=V.camp;
