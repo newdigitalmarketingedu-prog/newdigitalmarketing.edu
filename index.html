@@ -1166,7 +1166,7 @@ window.simSave=function(ri){const v=($('sim_e')||{}).value;if(!v||!v.trim()){toa
 window.simDel=function(ri){const r=(window.SIMR||[])[ri];if(!r||!confirm('¿Eliminar «'+r[0]+'»? Se quitará de la descripción de '+r[1].join(', ')+'.'))return;simApply(ri,null);logEv('c','Eliminó una característica de la competencia');R()};
 window.simAdd=function(){const v=(($('sim_n')||{}).value||'').trim(),ns=[...document.querySelectorAll('.sim_c:checked')].map(e=>e.value);if(!v){toast('Escribe la característica.');return}if(!ns.length){toast('Marca al menos una institución.');return}
  S.comp.forEach(c=>{if(ns.includes(c.n)){const x=(c.x||'').trim().replace(/[.,;\s]+$/,'');c.x=x?x+', '+v:v}});logEv('c','Agregó una característica de la competencia');R()};
-const oin4=V.intel;V.intel=function(){oin4();const t=$('view').querySelector('table');const c=t&&t.closest('.card');if(c)c.insertAdjacentHTML('afterend',`<div class="card scroll" style="grid-column:1/-1">${simCard()}${simAddForm()}</div>`)};
+const oin4=V.intel;V.intel=function(){oin4();const t=$('view').querySelector('table');const c=t&&t.closest('.card');if(c)c.insertAdjacentHTML('afterend',`<div class="card scroll" style="grid-column:1/-1">${simCard()}</div>`)};
 
 /* ---------- Finanzas: costo por lead editable ---------- */
 const oca3=V.camp;
