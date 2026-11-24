@@ -1140,14 +1140,17 @@ const SIMSTOP=new Set('de del la las el los en con para por un una unos unas al 
 const simN=t=>String(t||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
 const simTok=f=>[...new Set(simN(f).split(/[^a-z0-9ñ]+/).filter(w=>w.length>2&&!SIMSTOP.has(w)).map(w=>w.length>4?w.replace(/(es|s)$/,''):w))];
 const simFr=x=>String(x||'').split(/[.,;:\n•\-–()]+|\s(?:y|e|con|además|ademas|también|tambien)\s/i).map(f=>f.trim().replace(/^(el|la|los|las|un|una|cuenta con|cuentan con|tiene|tienen|ofrece|ofrecen|brinda|brindan|colegio|institución|institucion)\s+/i,'').trim()).filter(f=>simTok(f).length);
+const simRk=n=>{n=simN(n);return /inicial/.test(n)?0:/primaria/.test(n)?1:/secundaria/.test(n)?2:3};
+const simLv=a=>a.slice().sort((x,y)=>simRk(x)-simRk(y)||x.localeCompare(y));
+function simAddForm(){if(!CE()||!S.comp.length)return '';return `<div style="margin-top:12px"><h4 style="margin:0 0 6px">Agregar característica</h4><input id="sim_n" placeholder="Ej.: Talleres" style="max-width:320px"><div class="row" style="flex-wrap:wrap;gap:8px;margin:8px 0">${simLv(S.comp.map(c=>c.n)).map(n=>`<label style="margin:0;white-space:nowrap"><input type="checkbox" class="sim_c" value="${qa(n)}" style="width:auto"> ${esc(n)}</label>`).join('')}</div><button class="btn" onclick="simAdd()">Agregar</button></div>`}
 function simCard(){const L=S.comp.filter(c=>(c.x||'').trim());let h='<h3>Indicadores</h3>';
  if(!L.length)return h+'<p class="note">Agrega una descripción a los competidores para ver sus características.</p>';
  const F=[];L.forEach(c=>simFr(c.x).forEach(f=>F.push({n:c.n,f,t:simTok(f)})));
  const P=F.map((_,k)=>k),fd=k=>P[k]===k?k:(P[k]=fd(P[k]));
  for(let a=0;a<F.length;a++)for(let b=a+1;b<F.length;b++){if(F[a].n===F[b].n)continue;const A=F[a].t,B=F[b].t,c=A.filter(w=>B.includes(w)).length,m=Math.min(A.length,B.length);
-  if(c&&c/m>=0.6&&(m>1||A.concat(B).some(w=>w.length>=5)))P[fd(a)]=fd(b)}
+  if((c&&c/m>=0.6&&(m>1||A.concat(B).some(w=>w.length>=5)))||A.join(' ')===B.join(' '))P[fd(a)]=fd(b)}
  const G={};F.forEach((x,k)=>(G[fd(k)]=G[fd(k)]||[]).push(x));
- const R0=Object.values(G).map(g=>{const ins=[...new Set(g.map(x=>x.n))];const lab=g.map(x=>x.f).sort((a,b)=>a.length-b.length)[0];return [lab.charAt(0).toUpperCase()+lab.slice(1),ins,g]}).sort((a,b)=>b[1].length-a[1].length||a[0].localeCompare(b[0]));
+ const R0=Object.values(G).map(g=>{const ins=simLv([...new Set(g.map(x=>x.n))]);const lab=g.map(x=>x.f).sort((a,b)=>a.length-b.length)[0];return [lab.charAt(0).toUpperCase()+lab.slice(1),ins,g]}).sort((a,b)=>b[1].length-a[1].length||a[0].localeCompare(b[0]));
  if(!R0.length)return h+'<p class="note">No se encontraron características en las descripciones registradas.</p>';
  window.SIMR=R0;const ce=CE();
  return h+'<table><tr><th>Características</th><th>Instituciones que la tienen</th><th>Coinciden</th>'+(ce?'<th>Edición</th>':'')+'</tr>'+R0.map(([k,w,g],ri)=>{const ed=ce&&S.simE===ri;return `<tr><td>${ed?`<input id="sim_e" value="${qa(k)}" style="min-width:160px">`:`<b>${esc(k)}</b>`}</td><td>${w.map(n=>`<span class="tag" title="${qa(g.filter(x=>x.n===n).map(x=>x.f).join(' · '))}">${esc(n)}</span>`).join(' ')}</td><td><span class="tag ${w.length===L.length&&L.length>1?'wn':w.length>1?'ok':''}">${w.length>1?w.length+' de '+L.length:'Única'}</span></td>${ce?`<td style="white-space:nowrap">${ed?`<button class="btn" title="Guardar" onclick="simSave(${ri})">💾</button> <button class="btn g" title="Cancelar" onclick="S.simE=null;R()">↩</button>`:`<button class="btn g" title="Editar" onclick="S.simE=${ri};R()">✏️</button> <button class="btn g" title="Eliminar" onclick="simDel(${ri})">✖</button>`}</td>`:''}</tr>`}).join('')+'</table><p class="note">Se genera leyendo la descripción de cada competidor (separa las características por comas, puntos o “y”). Pasa el cursor sobre un colegio para ver cómo lo escribió.</p>'}
@@ -1158,7 +1161,9 @@ function simApply(ri,nv){const r=(window.SIMR||[])[ri];if(!r)return;const g=r[2]
  S.simE=null}
 window.simSave=function(ri){const v=($('sim_e')||{}).value;if(!v||!v.trim()){toast('Escribe el nombre de la característica.');return}simApply(ri,v.trim());logEv('c','Editó una característica de la competencia');R()};
 window.simDel=function(ri){const r=(window.SIMR||[])[ri];if(!r||!confirm('¿Eliminar «'+r[0]+'»? Se quitará de la descripción de '+r[1].join(', ')+'.'))return;simApply(ri,null);logEv('c','Eliminó una característica de la competencia');R()};
-const oin4=V.intel;V.intel=function(){oin4();const t=$('view').querySelector('table');const c=t&&t.closest('.card');if(c)c.insertAdjacentHTML('afterend',`<div class="card scroll" style="grid-column:1/-1">${simCard()}</div>`)};
+window.simAdd=function(){const v=(($('sim_n')||{}).value||'').trim(),ns=[...document.querySelectorAll('.sim_c:checked')].map(e=>e.value);if(!v){toast('Escribe la característica.');return}if(!ns.length){toast('Marca al menos una institución.');return}
+ S.comp.forEach(c=>{if(ns.includes(c.n)){const x=(c.x||'').trim().replace(/[.,;\s]+$/,'');c.x=x?x+', '+v:v}});logEv('c','Agregó una característica de la competencia');R()};
+const oin4=V.intel;V.intel=function(){oin4();const t=$('view').querySelector('table');const c=t&&t.closest('.card');if(c)c.insertAdjacentHTML('afterend',`<div class="card scroll" style="grid-column:1/-1">${simCard()}${simAddForm()}</div>`)};
 
 /* ---------- Finanzas: costo por lead editable ---------- */
 const oca3=V.camp;
