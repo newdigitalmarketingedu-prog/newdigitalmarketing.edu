@@ -2321,6 +2321,27 @@ startSync();
 })();
 </script>
 
+<script>
+/* ---------- Familias: eliminar o renombrar en el CRM se refleja en WhatsApp y Fidelización ---------- */
+(function(){
+ const nk=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().replace(/^familia\s+/,'').replace(/\s+/g,' ').trim();
+ /* Deja en S.animo solo las familias que siguen en el CRM (una entrada por familia). */
+ const syncFam=()=>{if(!S||!Array.isArray(S.fam)||!Array.isArray(S.animo))return;const c={};S.fam.forEach(f=>{const k=nk(f.n);c[k]=(c[k]||0)+1});
+  const a=S.animo.filter(x=>{const k=nk(x[0]);if(c[k]>0){c[k]--;return true}return false});if(a.length!==S.animo.length)S.animo=a};
+ window.syncFam=syncFam;
+ const oDel=window.edDel||edDel;
+ edDel=window.edDel=function(k,i){if(k!=='fam')return oDel(k,i);const f=S.fam[i];if(!f)return;
+  if(!confirm('¿Eliminar a «'+f.n+'»? También se quitará de WhatsApp y Fidelización.'))return;
+  if(f.e>=4&&typeof lvlIdx==='function'){const j=lvlIdx(f.g);if(j>=0&&S.metas[j])S.metas[j][2]=Math.max(0,S.metas[j][2]-1)}
+  S.fam.splice(i,1);syncFam();S.ed=null;try{logEv('c','Eliminó una familia (CRM, WhatsApp y Fidelización)')}catch(e){}R()};
+ const oSave=window.edSave||edSave;
+ edSave=window.edSave=function(k,i){const old=k==='fam'&&S.fam[i]?S.fam[i].n:null;oSave(k,i);
+  if(old===null||!S.fam[i])return;const nw=S.fam[i].n;if(nw===old)return;
+  const a=S.animo.find(x=>nk(x[0])===nk(old));if(a)a[0]=nw;
+  if(Array.isArray(S.cum))S.cum.forEach(c=>{if(c[2]===old)c[2]=nw});syncFam();R()};
+ ['wa','encuestas','analitica','dashboard'].forEach(v=>{const o=V[v];if(typeof o==='function')V[v]=function(){syncFam();return o.apply(this,arguments)}});
+})();
+</script>
 </body>
 </html>
 
