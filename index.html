@@ -1146,14 +1146,17 @@ function simAddForm(){if(!CE()||!S.comp.length)return '';return `<div style="mar
 function simCard(){const L=S.comp.filter(c=>(c.x||'').trim());let h='<h3>Indicadores</h3>';
  if(!L.length)return h+'<p class="note">Agrega una descripción a los competidores para ver sus características.</p>';
  const F=[];L.forEach(c=>simFr(c.x).forEach(f=>F.push({n:c.n,f,t:simTok(f)})));
- const P=F.map((_,k)=>k),fd=k=>P[k]===k?k:(P[k]=fd(P[k]));
- for(let a=0;a<F.length;a++)for(let b=a+1;b<F.length;b++){if(F[a].n===F[b].n)continue;const A=F[a].t,B=F[b].t,c=A.filter(w=>B.includes(w)).length,m=Math.min(A.length,B.length);
-  if((c&&c/m>=0.6&&(m>1||A.concat(B).some(w=>w.length>=5)))||A.join(' ')===B.join(' '))P[fd(a)]=fd(b)}
- const G={};F.forEach((x,k)=>(G[fd(k)]=G[fd(k)]||[]).push(x));
+ /* Agrupa sin encadenar: cada característica se une a la más corta que la contiene (p. ej. «talleres de danza» va con «Talleres», no une Talleres con Danza) */
+ const O=F.map((x,k)=>k).sort((p,q)=>F[p].t.length-F[q].t.length||F[p].f.length-F[q].f.length),SD=[],G={};
+ O.forEach(k=>{const T=F[k].t;let best=-1,bp=1e9,bc=0;
+  SD.forEach(sd=>{const S0=F[sd].t,c=S0.filter(w=>T.includes(w)).length;if(!c)return;const ex=S0.join(' ')===T.join(' ');
+   if(!ex&&!(c/S0.length>=0.6&&(S0.length>1||S0.some(w=>w.length>=5))))return;const p=Math.min(...S0.filter(w=>T.includes(w)).map(w=>T.indexOf(w)));
+   if(p<bp||(p===bp&&c>bc)){best=sd;bp=p;bc=c}});
+  if(best<0){SD.push(k);G[k]=[F[k]]}else G[best].push(F[k])});
  const R0=Object.values(G).map(g=>{const ins=simLv([...new Set(g.map(x=>x.n))]);const lab=g.map(x=>x.f).sort((a,b)=>a.length-b.length)[0];return [lab.charAt(0).toUpperCase()+lab.slice(1),ins,g]}).sort((a,b)=>b[1].length-a[1].length||a[0].localeCompare(b[0]));
  if(!R0.length)return h+'<p class="note">No se encontraron características en las descripciones registradas.</p>';
- window.SIMR=R0;const ce=CE();
- return h+'<table><tr><th>Características</th><th>Instituciones que la tienen</th><th>Coinciden</th>'+(ce?'<th>Edición</th>':'')+'</tr>'+R0.map(([k,w,g],ri)=>{const ed=ce&&S.simE===ri;return `<tr><td>${ed?`<input id="sim_e" value="${qa(k)}" style="min-width:160px">`:`<b>${esc(k)}</b>`}</td><td>${w.map(n=>`<span class="tag" title="${qa(g.filter(x=>x.n===n).map(x=>x.f).join(' · '))}">${esc(n)}</span>`).join(' ')}</td><td><span class="tag ${w.length===L.length&&L.length>1?'wn':w.length>1?'ok':''}">${w.length>1?w.length+' de '+L.length:'Única'}</span></td>${ce?`<td style="white-space:nowrap">${ed?`<button class="btn" title="Guardar" onclick="simSave(${ri})">💾</button> <button class="btn g" title="Cancelar" onclick="S.simE=null;R()">↩</button>`:`<button class="btn g" title="Editar" onclick="S.simE=${ri};R()">✏️</button> <button class="btn g" title="Eliminar" onclick="simDel(${ri})">✖</button>`}</td>`:''}</tr>`}).join('')+'</table><p class="note">Se genera leyendo la descripción de cada competidor (separa las características por comas, puntos o “y”). Pasa el cursor sobre un colegio para ver cómo lo escribió.</p>'}
+ window.SIMR=R0;const ce=CE(),NC=L.some(c=>simRk(c.n)===3)?4:3;
+ return h+'<table><tr><th>Características</th><th colspan="'+NC+'">Instituciones que la tienen</th><th>Coinciden</th>'+(ce?'<th>Edición</th>':'')+'</tr>'+R0.map(([k,w,g],ri)=>{const ed=ce&&S.simE===ri;return `<tr><td>${ed?`<input id="sim_e" value="${qa(k)}" style="min-width:160px">`:`<b>${esc(k)}</b>`}</td>${[...Array(NC)].map((_,lv)=>`<td>${w.filter(n=>simRk(n)===lv).map(n=>`<span class="tag" title="${qa(g.filter(x=>x.n===n).map(x=>x.f).join(' · '))}">${esc(n)}</span>`).join(' ')}</td>`).join('')}<td><span class="tag ${w.length===L.length&&L.length>1?'wn':w.length>1?'ok':''}">${w.length>1?w.length+' de '+L.length:'Única'}</span></td>${ce?`<td style="white-space:nowrap">${ed?`<button class="btn" title="Guardar" onclick="simSave(${ri})">💾</button> <button class="btn g" title="Cancelar" onclick="S.simE=null;R()">↩</button>`:`<button class="btn g" title="Editar" onclick="S.simE=${ri};R()">✏️</button> <button class="btn g" title="Eliminar" onclick="simDel(${ri})">✖</button>`}</td>`:''}</tr>`}).join('')+'</table><p class="note">Se genera leyendo la descripción de cada competidor (separa las características por comas, puntos o “y”). Pasa el cursor sobre un colegio para ver cómo lo escribió.</p>'}
 /* Editar o eliminar una característica: cambia el texto en la descripción de cada competidor que la tiene */
 function simApply(ri,nv){const r=(window.SIMR||[])[ri];if(!r)return;const g=r[2];
  S.comp.forEach(c=>{const mine=g.filter(x=>x.n===c.n).map(x=>x.f);if(!mine.length)return;let done=0;
