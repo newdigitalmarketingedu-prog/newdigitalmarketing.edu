@@ -325,7 +325,7 @@ function block(){const p=document.getElementById('cfgp');if(!p||!p.children.leng
 setInterval(()=>{try{chip();block()}catch(e){}},1000);
 })();
 </script>
-<script>window.__B={h:location.hash.slice(1),sp:0};try{var _q=location.hash+location.search;if(/(access_token=|error_reason=)/.test(_q)&&/ndm_/.test(_q)){localStorage.setItem('ndm:oauth',JSON.stringify({h:_q,t:Date.now()}));window.__B.h='';document.documentElement.style.display='none';window.close()}}catch(e){}try{if(sessionStorage.getItem('ndm:splash')||localStorage.getItem('ndm:splash')){window.__B.sp=1;var _c=localStorage.getItem('ndm:spbg')||'#d92020',_st=document.createElement('style');_st.id='spboot';_st.textContent='html{background:'+_c+'!important}body>*{visibility:hidden!important}body>#splash{visibility:visible!important}';document.head.appendChild(_st);setTimeout(function(){var x=document.getElementById('spboot');if(x)x.remove()},4000)}sessionStorage.removeItem('ndm:splash');localStorage.removeItem('ndm:splash')}catch(e){}</script>
+<script>window.__B={h:location.hash.slice(1),sp:0};try{var _q=location.hash+location.search;if(/(access_token=|error_reason=)/.test(_q)&&/ndm_/.test(_q)){localStorage.setItem('ndm:oauth',JSON.stringify({h:_q,t:Date.now()}));window.__B.h='';document.documentElement.style.display='none';window.close()}else if(/[?&](code|error)=/.test(location.search)&&/ndmtt_/.test(location.search)){localStorage.setItem('ndm:ttauth',JSON.stringify({q:location.search,t:Date.now()}));window.__B.h='';document.documentElement.style.display='none';try{history.replaceState(null,'',location.pathname)}catch(e){}window.close()}}catch(e){}try{if(sessionStorage.getItem('ndm:splash')||localStorage.getItem('ndm:splash')){window.__B.sp=1;var _c=localStorage.getItem('ndm:spbg')||'#d92020',_st=document.createElement('style');_st.id='spboot';_st.textContent='html{background:'+_c+'!important}body>*{visibility:hidden!important}body>#splash{visibility:visible!important}';document.head.appendChild(_st);setTimeout(function(){var x=document.getElementById('spboot');if(x)x.remove()},4000)}sessionStorage.removeItem('ndm:splash');localStorage.removeItem('ndm:splash')}catch(e){}</script>
 <script>var DIRTY=0;['click','input','change','keyup','drop'].forEach(function(e){addEventListener(e,function(){DIRTY=Date.now()+8000},true)});setTimeout(function(){var b=document.getElementById('boot');if(b)b.remove()},4000)</script>
 </head>
 <body>
@@ -1702,6 +1702,42 @@ const busyEd=()=>{const a=document.activeElement;return a&&/^(INPUT|TEXTAREA)$/.
 const or9=V.redes;V.redes=function(){if(S.rtab===undefined)S.rtab='feed';if(S.rtab==='feed')return V.feeds();or9();
  document.querySelectorAll('#view a.btn[onclick^="rcon("]').forEach(a=>{const k=/rcon\('(\w+)'\)/.exec(a.getAttribute('onclick'))[1];a.removeAttribute('href');a.removeAttribute('target');a.setAttribute('onclick',"netConnect('"+k+"');return false");a.style.cursor='pointer'});
  const n=[...document.querySelectorAll('#view .note')].find(x=>/publicaci[oó]n autom/i.test(x.textContent));if(n)n.textContent='Al pulsar «Conectar» se abre una nueva pestaña de la red para autorizar los permisos; el feed se ve en la pestaña «Feeds (perfiles)». La publicación automática requiere además la aprobación de las APIs oficiales de Meta y TikTok.'};
+/* ===== API oficial de TikTok (Login Kit + Display API) a través del servidor (Cloudflare Worker) ===== */
+const TT_KEY='sbawmakg1d5omlqsh7',TT_WDEF='https://ndm-tiktok.andresdeza786.workers.dev',TT_SC='user.info.basic,user.info.profile,user.info.stats,video.list';
+const TTW=()=>String(CF().ttw||TT_WDEF||'').trim().replace(/\/+$/,''),TSL=()=>SL[S.inst||0]||String(S.inst||0);
+window.ttConnect=function(){if(!TTW()){toast('Falta la dirección del servidor de TikTok (más abajo, en «De dónde salen los datos»).');return}
+ const st='ndmtt_'+TSL()+'_'+Math.random().toString(36).slice(2,10);try{localStorage.setItem('ndm:ttstate',st)}catch(e){}
+ window.open('https://www.tiktok.com/v2/auth/authorize/?client_key='+enc(TT_KEY)+'&scope='+enc(TT_SC)+'&response_type=code&redirect_uri='+enc(uri())+'&state='+enc(st),'_blank');
+ toast('Se abrió TikTok en una pestaña nueva: inicia sesión con la cuenta del colegio y autoriza.')};
+async function ttAuth(v){let o;try{o=JSON.parse(v)}catch(e){return}const q=new URLSearchParams(String(o.q||'').replace(/^\?/,'')),code=q.get('code'),st=q.get('state')||'';
+ let exp='';try{exp=localStorage.getItem('ndm:ttstate')||''}catch(e){}
+ if(!code)return toast('TikTok: no se concedieron los permisos ('+(q.get('error_description')||q.get('error')||'cancelado')+').');
+ if(!exp||st!==exp)return toast('TikTok: la respuesta no coincide con la solicitud; vuelve a pulsar «Conectar con TikTok».');
+ const inst=st.split('_')[1];try{localStorage.removeItem('ndm:ttstate')}catch(e){}
+ try{const r=await fetch(TTW()+'/exchange',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code,redirect_uri:uri(),inst})}),j=await r.json();if(!j.ok)throw new Error(j.error||'error');
+  const f=F();f.ttc=1;S.rcon.tt=1;delete PRO[ak('tt')];logEv('c','Conectó TikTok (API)');toast('TikTok conectado.');await ttLoad(true);S.rtab='feed';V.redes()}catch(e){toast('TikTok: '+e.message)}}
+addEventListener('storage',e=>{if(e.key==='ndm:ttauth'&&e.newValue){ttAuth(e.newValue);try{localStorage.removeItem('ndm:ttauth')}catch(x){}}});
+async function ttLoad(force){const key=ak('tt'),c=PRO[key];if(!force&&c&&Date.now()-c.t<5*60e3)return c;if(!TTW())return null;
+ try{const j=await (await fetch(TTW()+'/feed?inst='+enc(TSL()))).json();if(j.error)throw new Error(j.error);
+  if(!j.connected){F().ttc=0;PRO[key]={err:'TikTok no está conectado por API.',t:Date.now()};return PRO[key]}
+  const u=j.user||{};PRO[key]={n:u.display_name,u:u.username,s:u.follower_count,g:u.following_count,l:u.likes_count,p:u.video_count,pic:u.avatar_url,link:u.profile_deep_link,vids:j.videos||[],tt:1,t:Date.now()};
+  if(u.username){const f=F();if(!f.tt)f.tt=u.username}}catch(e){PRO[key]={err:e.message,t:Date.now()}}return PRO[key]}
+window.ttDisconnect=async function(){if(!confirm('¿Desconectar la API de TikTok? El feed volverá al modo público.'))return;try{await fetch(TTW()+'/disconnect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({inst:TSL()})})}catch(e){}
+ F().ttc=0;delete PRO[ak('tt')];logEv('c','Desconectó la API de TikTok');V.redes()};
+window.ttwSave=function(){CF().ttw=($('ttw_i').value||'').trim();delete PRO[ak('tt')];toast('Dirección del servidor de TikTok guardada.');V.redes()};
+const fdur=s=>s?Math.floor(s/60)+':'+String(s%60).padStart(2,'0'):'';
+const ofe=V.feeds;V.feeds=function(){ofe();const ce=CE(),f=F(),api=PRO[ak('tt')],live=api&&api.tt&&!api.err,card=document.querySelector('#view .pw-tt');
+ if(card){const ws=card.querySelector('.pws'),wf=card.querySelector('.pwf'),pe=card.querySelector('.pwe'),wb=card.querySelector('.pwb');
+  if(live){if(ws)ws.innerHTML=[['Seguidores',api.s],['Siguiendo',api.g],['Me gusta',api.l],['Videos',api.p]].map(x=>`<div><b>${fmtN(x[1])}</b><span>${x[0]}</span></div>`).join('');
+   if(wf)wf.innerHTML=`<span class="tag ok">En vivo · API de TikTok</span> ${fdate(api.t)}`;
+   const det=card.querySelector('.pwe details');if(det)det.remove();
+   if(wb&&api.vids&&api.vids.length)wb.insertAdjacentHTML('beforeend',`<div style="margin-top:12px;text-align:left"><b style="font-size:13px">Últimos videos</b><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:6px">${api.vids.slice(0,9).map(v=>`<a href="${esc(v.share_url||purl('tt'))}" target="_blank" rel="noopener" title="${qa(v.title||v.video_description||'')}" style="position:relative;display:block;aspect-ratio:9/16;border-radius:8px;overflow:hidden;background:#111;text-decoration:none"><img src="${esc(v.cover_image_url||'')}" alt="" referrerpolicy="no-referrer" style="width:100%;height:100%;object-fit:cover" onerror="this.remove()"><span style="position:absolute;left:4px;bottom:4px;right:4px;color:#fff;font-size:10px;line-height:1.3;text-shadow:0 1px 2px #000">▶ ${fmtN(v.view_count)} · ♥ ${fmtN(v.like_count)}<br>💬 ${fmtN(v.comment_count)} · ↗ ${fmtN(v.share_count)}</span>${v.duration?`<span style="position:absolute;right:4px;top:4px;background:rgba(0,0,0,.6);color:#fff;font-size:10px;padding:1px 4px;border-radius:4px">${fdur(v.duration)}</span>`:''}</a>`).join('')}</div></div>`)}
+  else if(api&&api.err&&f.ttc&&wf)wf.textContent='API de TikTok: '+api.err;
+  if(pe&&ce)pe.insertAdjacentHTML('beforeend',f.ttc?` <button class="btn g" style="margin-top:8px" onclick="ttLoad(true).then(()=>V.redes())">Actualizar datos</button> <button class="btn g" style="margin-top:8px" onclick="ttDisconnect()">Desconectar API</button>`:`<button class="btn" style="margin-top:8px" onclick="ttConnect()">Conectar con TikTok (datos en vivo)</button>`)}
+ const nc=[...document.querySelectorAll('#view .card')].find(x=>/De dónde salen los datos/.test(x.textContent));
+ if(nc){const p=nc.querySelector('p.note');if(p)p.textContent='La foto de perfil se trae sola desde cada red. Los seguidores de Facebook e Instagram se leen en vivo al conectar con Meta, y los de TikTok (seguidores, me gusta y estadísticas de cada video) al conectar con TikTok. Sin esas conexiones, el equipo los ingresa a mano y se muestra la fecha.';
+  if(ce)nc.insertAdjacentHTML('beforeend',`<label style="margin-top:10px">Servidor de TikTok (Cloudflare Worker)</label><div class="row"><input id="ttw_i" value="${esc(TTW())}" placeholder="https://ndm-tiktok.tu-cuenta.workers.dev"><button class="btn g" onclick="ttwSave()">Guardar</button></div><p class="note">En TikTok for Developers, la app debe tener esta dirección como Redirect URI (Web):<br><code>${esc(uri())}</code></p>`)}
+ if(!SBX&&f.ttc&&TTW()){const c=PRO[ak('tt')];if(!c||Date.now()-c.t>=5*60e3)ttLoad().then(()=>{if(S.rtab==='feed'&&!busyEd())V.feeds()})}};
 })();
 
 /* ===== Biblioteca multimedia: Google Drive y Google Fotos dentro de la plataforma ===== */
